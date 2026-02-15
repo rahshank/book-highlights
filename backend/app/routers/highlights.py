@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-import anthropic
 
 from app.database import get_db
 from app.models import Book, Highlight
@@ -61,14 +60,7 @@ async def create_highlight_from_photo(
     filepath.write_bytes(contents)
 
     # Run OCR
-    try:
-        extracted_text = extract_text_from_image(str(filepath))
-    except anthropic.BadRequestError:
-        raise HTTPException(
-            status_code=422,
-            detail="The page content was blocked by the API content filter. "
-            "Try photographing a smaller section of the page.",
-        )
+    extracted_text = extract_text_from_image(str(filepath))
     if not extracted_text.strip():
         raise HTTPException(status_code=422, detail="Could not extract text from image")
 
