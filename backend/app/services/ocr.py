@@ -14,9 +14,16 @@ from app.config import ANTHROPIC_API_KEY
 
 logger = logging.getLogger(__name__)
 
+SYSTEM_PROMPT = (
+    "You are a book transcription assistant for a personal reading tracker app. "
+    "The user photographs pages from published books they own so they can save "
+    "highlights and quotations for personal study. Your job is to accurately "
+    "transcribe the text visible in the photo."
+)
+
 VISION_PROMPT = (
-    "Extract the text from this book page photo. "
-    "Return ONLY the extracted text, preserving paragraph breaks. "
+    "Transcribe the text from this book page photograph. "
+    "Return ONLY the transcribed text, preserving paragraph breaks. "
     "If there are highlighted or underlined passages, wrap each one in **bold**. "
     "Do not add commentary, headers, or explanations — just the text."
 )
@@ -37,6 +44,7 @@ def _extract_with_claude(image_path: str) -> str | None:
         message = client.messages.create(
             model="claude-sonnet-4-5-20250929",
             max_tokens=4096,
+            system=SYSTEM_PROMPT,
             messages=[
                 {
                     "role": "user",
@@ -55,7 +63,11 @@ def _extract_with_claude(image_path: str) -> str | None:
             ],
         )
         text = message.content[0].text.strip()
+        print(f"[OCR] Claude Vision succeeded ({len(text)} chars)")
         return text if text else None
+    except anthropic.BadRequestError as exc:
+        print(f"[OCR] Claude Vision blocked: {exc}")
+        raise
     except Exception as exc:
         print(f"[OCR] Claude Vision failed: {exc}")
         return None
@@ -83,6 +95,7 @@ def extract_text_from_image(image_path: str) -> str:
 
     Uses Claude vision API for high-quality results, falling back to
     Tesseract OCR if the API key is not configured or the call fails.
+    Raises on content-filter blocks so the caller can show a clear error.
     """
     result = _extract_with_claude(image_path)
     if result:
