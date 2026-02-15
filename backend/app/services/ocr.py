@@ -25,7 +25,9 @@ VISION_PROMPT = (
 def _extract_with_claude(image_path: str) -> str | None:
     """Extract text from an image using the Claude vision API."""
     if not ANTHROPIC_API_KEY:
+        logger.warning("ANTHROPIC_API_KEY is not set — skipping Claude Vision OCR")
         return None
+    logger.info("Using Claude Vision OCR (key starts with %s...)", ANTHROPIC_API_KEY[:10])
     try:
         mime_type = mimetypes.guess_type(image_path)[0] or "image/jpeg"
         with open(image_path, "rb") as f:
