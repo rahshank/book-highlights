@@ -116,25 +116,81 @@ def _try_claude_whole_image(client: anthropic.Anthropic, image_path: str) -> str
     return None
 
 
+def _merge_overlapping_texts(texts: list[str]) -> str:
+    """Merge OCR results from overlapping image strips.
+
+    Each consecutive pair of strips shares ~20% visual overlap, so their
+    OCR text will have a shared passage at the boundary.  We find the
+    longest common overlap between the end of text[i] and the start of
+    text[i+1] and merge at that point to avoid duplication or lost text.
+    """
+    if not texts:
+        return ""
+    if len(texts) == 1:
+        return texts[0]
+
+    merged = texts[0]
+    for i in range(1, len(texts)):
+        prev = merged
+        curr = texts[i]
+
+        # Normalise whitespace for matching — compare word sequences
+        prev_words = prev.split()
+        curr_words = curr.split()
+
+        # Try to find an overlap: look for the longest suffix of prev
+        # that matches a prefix of curr (in terms of words).
+        # Check from longest possible overlap down to a minimum of 4 words.
+        best_overlap = 0
+        min_overlap_words = 4
+        max_check = min(len(prev_words), len(curr_words), 80)
+
+        for length in range(max_check, min_overlap_words - 1, -1):
+            if prev_words[-length:] == curr_words[:length]:
+                best_overlap = length
+                break
+
+        if best_overlap > 0:
+            # Found overlap — take everything from curr after the overlapping words
+            remainder_words = curr_words[best_overlap:]
+            print(f"[OCR] Merge: found {best_overlap}-word overlap between strips {i} and {i + 1}")
+            if remainder_words:
+                merged = merged.rstrip() + "\n" + " ".join(remainder_words)
+            # else: curr was entirely contained in prev, skip it
+        else:
+            # No overlap found — just concatenate with paragraph break
+            print(f"[OCR] Merge: no overlap found between strips {i} and {i + 1}, concatenating")
+            merged = merged.rstrip() + "\n\n" + curr.lstrip()
+
+    return merged
+
+
 def _try_claude_split(client: anthropic.Anthropic, image_path: str, num_strips: int = 3) -> str | None:
-    """Split image into horizontal strips and OCR each separately.
+    """Split image into overlapping horizontal strips and OCR each separately.
 
     Works around the content filter — a full page of sensitive text may be
-    blocked, but individual strips usually pass.
+    blocked, but individual strips usually pass.  Strips overlap by ~20%
+    so that text at the cut boundaries is fully captured in at least one
+    strip.  Results are merged using overlap detection.
     """
     img = cv2.imread(image_path)
     if img is None:
         return None
 
     h = img.shape[0]
-    strip_height = h // num_strips
+    # Each strip covers 1/num_strips of the height, plus 20% overlap
+    # on each side (except the first/last strip edges).
+    base_height = h // num_strips
+    overlap = base_height // 5  # ~20% of one strip height
+
     strips = []
     for i in range(num_strips):
-        y_start = i * strip_height
-        y_end = h if i == num_strips - 1 else (i + 1) * strip_height
+        y_start = max(0, i * base_height - overlap)
+        y_end = min(h, (i + 1) * base_height + overlap) if i < num_strips - 1 else h
         strips.append(img[y_start:y_end])
+        print(f"[OCR] Strip {i + 1}/{num_strips}: rows {y_start}-{y_end} ({y_end - y_start}px)")
 
-    print(f"[OCR] Trying split strategy ({num_strips} strips)...")
+    print(f"[OCR] Trying split strategy ({num_strips} overlapping strips, {overlap}px overlap)...")
     model = MODELS[0]  # Use best model for strips
     results: list[str] = []
 
@@ -159,7 +215,7 @@ def _try_claude_split(client: anthropic.Anthropic, image_path: str, num_strips: 
     if not results:
         return None
 
-    combined = "\n\n".join(results)
+    combined = _merge_overlapping_texts(results)
     print(f"[OCR] Split strategy recovered {len(results)}/{num_strips} strips ({len(combined)} chars)")
     return combined
 
