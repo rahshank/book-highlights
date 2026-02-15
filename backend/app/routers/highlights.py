@@ -48,19 +48,28 @@ async def scan_page_photo(
 
     Returns the extracted text for user review — does NOT save anything.
     """
-    ext = Path(photo.filename).suffix if photo.filename else ".jpg"
-    filename = f"{uuid.uuid4()}{ext}"
-    filepath = UPLOAD_DIR / filename
-    contents = await photo.read()
-    filepath.write_bytes(contents)
+    try:
+        ext = Path(photo.filename).suffix if photo.filename else ".jpg"
+        filename = f"{uuid.uuid4()}{ext}"
+        filepath = UPLOAD_DIR / filename
+        contents = await photo.read()
+        filepath.write_bytes(contents)
+        print(f"[SCAN] Saved upload to {filepath} ({len(contents)} bytes)")
 
-    extracted_text = await asyncio.get_event_loop().run_in_executor(
-        None, extract_text_from_image, str(filepath)
-    )
-    if not extracted_text.strip():
-        raise HTTPException(status_code=422, detail="Could not extract text from image")
+        extracted_text = await asyncio.get_event_loop().run_in_executor(
+            None, extract_text_from_image, str(filepath)
+        )
+        if not extracted_text.strip():
+            raise HTTPException(status_code=422, detail="Could not extract text from image")
 
-    return ScanResult(text=extracted_text, source_image=filename)
+        print(f"[SCAN] Success — {len(extracted_text)} chars extracted")
+        return ScanResult(text=extracted_text, source_image=filename)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"OCR failed: {exc}")
 
 
 @router.patch("/{highlight_id}", response_model=HighlightOut)

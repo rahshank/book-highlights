@@ -101,7 +101,9 @@ export interface ScanResult {
 export async function scanPagePhoto(file: File): Promise<ScanResult> {
   const form = new FormData();
   form.append("photo", file);
-  return fetchJSON(`${API_BASE}/highlights/scan`, {
+  // Call backend directly — bypasses Next.js rewrite proxy which mangles
+  // long-running multipart uploads. CORS is configured on the backend.
+  return fetchJSON(`http://localhost:8001/api/highlights/scan`, {
     method: "POST",
     body: form,
   });
