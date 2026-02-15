@@ -8,6 +8,8 @@ services:
       - highlights-db:/app/data
     env_file:
       - ./backend/.env
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     restart: unless-stopped
 
   frontend:
