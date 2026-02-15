@@ -8,6 +8,7 @@ from app.schemas import HighlightCreate, HighlightUpdate, HighlightOut, ScanResu
 from app.services.ocr import extract_text_from_image
 from app.config import UPLOAD_DIR
 
+import asyncio
 import uuid
 from pathlib import Path
 
@@ -53,7 +54,9 @@ async def scan_page_photo(
     contents = await photo.read()
     filepath.write_bytes(contents)
 
-    extracted_text = extract_text_from_image(str(filepath))
+    extracted_text = await asyncio.get_event_loop().run_in_executor(
+        None, extract_text_from_image, str(filepath)
+    )
     if not extracted_text.strip():
         raise HTTPException(status_code=422, detail="Could not extract text from image")
 

@@ -1,0 +1,19 @@
+import { NextRequest, NextResponse } from "next/server";
+
+const BACKEND = process.env.API_URL || "http://backend:8000";
+
+export async function POST(req: NextRequest) {
+  const body = await req.arrayBuffer();
+
+  const resp = await fetch(`${BACKEND}/api/highlights/scan`, {
+    method: "POST",
+    headers: { "content-type": req.headers.get("content-type") ?? "" },
+    body: body,
+  });
+
+  const data = await resp.text();
+  return new NextResponse(data, {
+    status: resp.status,
+    headers: { "content-type": resp.headers.get("content-type") ?? "application/json" },
+  });
+}
