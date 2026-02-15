@@ -5,7 +5,7 @@ services:
       - "8001:8000"
     volumes:
       - ./backend/uploads:/app/uploads
-      - highlights-db:/app
+      - highlights-db:/app/data
     env_file:
       - ./backend/.env
     restart: unless-stopped
