@@ -7,8 +7,10 @@ import logging
 import mimetypes
 
 import anthropic
+import cv2
+import numpy as np
 import pytesseract
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image
 
 from app.config import ANTHROPIC_API_KEY
 
@@ -96,20 +98,46 @@ def _extract_with_claude(image_path: str) -> str | None:
     return None
 
 
-def _preprocess_image(image: Image.Image) -> Image.Image:
-    """Enhance a book page photo for better Tesseract OCR results."""
-    image = image.convert("L")
-    enhancer = ImageEnhance.Contrast(image)
-    image = enhancer.enhance(1.5)
-    image = image.filter(ImageFilter.SHARPEN)
-    return image
+def _preprocess_for_tesseract(image_path: str) -> np.ndarray:
+    """Preprocess a book page photo for optimal Tesseract OCR.
+
+    Applies grayscale conversion, resizing, adaptive thresholding,
+    and noise removal to produce a clean binary image.
+    """
+    img = cv2.imread(image_path)
+
+    # Convert to grayscale
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # Resize so the shorter side is at least 2000px (ensures text is large
+    # enough for Tesseract — equivalent to ~300 DPI for a typical book page)
+    h, w = gray.shape
+    min_dim = min(h, w)
+    if min_dim < 2000:
+        scale = 2000 / min_dim
+        gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+
+    # Adaptive thresholding handles uneven lighting from phone camera flash
+    binary = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 15
+    )
+
+    # Light denoise to remove speckles without destroying text
+    binary = cv2.medianBlur(binary, 3)
+
+    return binary
 
 
 def _extract_with_tesseract(image_path: str) -> str:
-    """Extract text from an image file using Tesseract OCR."""
-    image = Image.open(image_path)
-    processed = _preprocess_image(image)
-    text = pytesseract.image_to_string(processed, lang="eng")
+    """Extract text from an image file using Tesseract OCR with OpenCV preprocessing."""
+    processed = _preprocess_for_tesseract(image_path)
+    pil_image = Image.fromarray(processed)
+
+    # PSM 6 = assume a single uniform block of text (best for book pages)
+    # OEM 3 = default (LSTM neural net)
+    custom_config = "--psm 6 --oem 3"
+    text = pytesseract.image_to_string(pil_image, lang="eng", config=custom_config)
+    print(f"[OCR] Tesseract extracted {len(text.strip())} chars")
     return text.strip()
 
 
