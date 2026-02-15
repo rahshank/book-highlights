@@ -6,6 +6,7 @@ import base64
 import io
 import logging
 import mimetypes
+import time
 
 import anthropic
 import cv2
@@ -97,15 +98,20 @@ def _try_claude_whole_image(client: anthropic.Anthropic, image_path: str) -> str
     for model in MODELS:
         try:
             print(f"[OCR] Trying Claude Vision with {model}...")
+            t0 = time.monotonic()
             text = _call_claude(client, model, image_data, mime_type)
+            elapsed = time.monotonic() - t0
             if text:
-                print(f"[OCR] {model} succeeded ({len(text)} chars)")
+                print(f"[OCR] {model} succeeded ({len(text)} chars) in {elapsed:.1f}s")
                 return text
+            print(f"[OCR] {model} returned empty in {elapsed:.1f}s")
         except anthropic.BadRequestError as exc:
-            print(f"[OCR] {model} blocked by content filter: {exc}")
+            elapsed = time.monotonic() - t0
+            print(f"[OCR] {model} blocked by content filter after {elapsed:.1f}s: {exc}")
             continue
         except Exception as exc:
-            print(f"[OCR] {model} failed: {exc}")
+            elapsed = time.monotonic() - t0
+            print(f"[OCR] {model} failed after {elapsed:.1f}s: {exc}")
             continue
     return None
 
@@ -135,16 +141,20 @@ def _try_claude_split(client: anthropic.Anthropic, image_path: str, num_strips: 
     for i, strip in enumerate(strips):
         image_data, mime_type = _encode_cv_image(strip)
         try:
+            t0 = time.monotonic()
             text = _call_claude(client, model, image_data, mime_type)
+            elapsed = time.monotonic() - t0
             if text:
-                print(f"[OCR] Strip {i + 1}/{num_strips} succeeded ({len(text)} chars)")
+                print(f"[OCR] Strip {i + 1}/{num_strips} succeeded ({len(text)} chars) in {elapsed:.1f}s")
                 results.append(text)
             else:
-                print(f"[OCR] Strip {i + 1}/{num_strips} returned empty")
+                print(f"[OCR] Strip {i + 1}/{num_strips} returned empty in {elapsed:.1f}s")
         except anthropic.BadRequestError:
-            print(f"[OCR] Strip {i + 1}/{num_strips} blocked by content filter")
+            elapsed = time.monotonic() - t0
+            print(f"[OCR] Strip {i + 1}/{num_strips} blocked by content filter after {elapsed:.1f}s")
         except Exception as exc:
-            print(f"[OCR] Strip {i + 1}/{num_strips} failed: {exc}")
+            elapsed = time.monotonic() - t0
+            print(f"[OCR] Strip {i + 1}/{num_strips} failed after {elapsed:.1f}s: {exc}")
 
     if not results:
         return None
@@ -268,15 +278,21 @@ def _preprocess_for_tesseract(image_path: str) -> np.ndarray:
 
 def _extract_with_tesseract(image_path: str) -> str:
     """Extract text from an image file using Tesseract OCR with OpenCV preprocessing."""
+    t0 = time.monotonic()
     processed = _preprocess_for_tesseract(image_path)
+    preprocess_time = time.monotonic() - t0
+    print(f"[OCR] Tesseract preprocessing took {preprocess_time:.1f}s")
+
     pil_image = Image.fromarray(processed)
 
     # PSM 3 = fully automatic page segmentation (handles multi-region images
     # better than PSM 6 when there are two visible pages or background noise)
     # OEM 3 = default (LSTM neural net)
     custom_config = "--psm 3 --oem 3"
+    t1 = time.monotonic()
     text = pytesseract.image_to_string(pil_image, lang="eng", config=custom_config)
-    print(f"[OCR] Tesseract extracted {len(text.strip())} chars")
+    ocr_time = time.monotonic() - t1
+    print(f"[OCR] Tesseract OCR took {ocr_time:.1f}s, extracted {len(text.strip())} chars")
     return text.strip()
 
 
@@ -325,7 +341,17 @@ def extract_text_from_image(image_path: str) -> str:
     Uses Claude vision API for high-quality results, falling back to
     Tesseract OCR if the API key is not configured or the call fails.
     """
+    total_start = time.monotonic()
+    print(f"[OCR] Starting text extraction for {image_path}")
+
     result = _extract_with_claude(image_path)
     if result:
-        return _deduplicate_lines(result)
-    return _deduplicate_lines(_extract_with_tesseract(image_path))
+        result = _deduplicate_lines(result)
+        total = time.monotonic() - total_start
+        print(f"[OCR] DONE (Claude) — {len(result)} chars in {total:.1f}s total")
+        return result
+
+    result = _deduplicate_lines(_extract_with_tesseract(image_path))
+    total = time.monotonic() - total_start
+    print(f"[OCR] DONE (Tesseract fallback) — {len(result)} chars in {total:.1f}s total")
+    return result
