@@ -79,6 +79,7 @@ class HighlightCreate(BaseModel):
     location: str = ""
     chapter: str = ""
     source: str = "manual"
+    source_image: str = ""
 
 
 class HighlightUpdate(BaseModel):
@@ -95,6 +96,13 @@ class SearchResult(BaseModel):
     highlight: HighlightOut
     book_title: str
     book_author: str
+
+
+# --- OCR ---
+
+class ScanResult(BaseModel):
+    text: str
+    source_image: str
 
 
 # --- Publishing ---

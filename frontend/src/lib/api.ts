@@ -83,6 +83,8 @@ export async function createHighlight(data: {
   text: string;
   note?: string;
   page_number?: number;
+  source?: string;
+  source_image?: string;
 }): Promise<Highlight> {
   return fetchJSON(`${API_BASE}/highlights`, {
     method: "POST",
@@ -91,18 +93,15 @@ export async function createHighlight(data: {
   });
 }
 
-export async function uploadPagePhoto(
-  bookId: string,
-  file: File,
-  pageNumber?: number,
-  note?: string
-): Promise<Highlight> {
+export interface ScanResult {
+  text: string;
+  source_image: string;
+}
+
+export async function scanPagePhoto(file: File): Promise<ScanResult> {
   const form = new FormData();
-  form.append("book_id", bookId);
   form.append("photo", file);
-  if (pageNumber) form.append("page_number", String(pageNumber));
-  if (note) form.append("note", note);
-  return fetchJSON(`${API_BASE}/highlights/from-photo`, {
+  return fetchJSON(`${API_BASE}/highlights/scan`, {
     method: "POST",
     body: form,
   });

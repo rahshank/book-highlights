@@ -6,7 +6,7 @@ import Link from "next/link";
 import {
   getBook,
   createHighlight,
-  uploadPagePhoto,
+  scanPagePhoto,
   deleteHighlight,
   updateHighlight,
   publishHighlights,
@@ -27,12 +27,15 @@ export default function BookPage() {
   const [newNote, setNewNote] = useState("");
   const [newPage, setNewPage] = useState("");
 
-  // Photo upload
+  // Photo upload — two-step: scan then review
   const [showPhotoUpload, setShowPhotoUpload] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPage, setPhotoPage] = useState("");
   const [photoNote, setPhotoNote] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [scannedText, setScannedText] = useState("");
+  const [scannedImage, setScannedImage] = useState("");
+  const [showScanReview, setShowScanReview] = useState(false);
 
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -72,23 +75,15 @@ export default function BookPage() {
     }
   }
 
-  async function handlePhotoUpload(e: React.FormEvent) {
+  async function handleScanPhoto(e: React.FormEvent) {
     e.preventDefault();
     if (!photoFile) return;
     setUploading(true);
     try {
-      await uploadPagePhoto(
-        bookId,
-        photoFile,
-        photoPage ? parseInt(photoPage) : undefined,
-        photoNote.trim() || undefined
-      );
-      setPhotoFile(null);
-      setPhotoPage("");
-      setPhotoNote("");
-      setShowPhotoUpload(false);
-      setMessage({ type: "success", text: "Page scanned and highlight extracted" });
-      loadBook();
+      const result = await scanPagePhoto(photoFile);
+      setScannedText(result.text);
+      setScannedImage(result.source_image);
+      setShowScanReview(true);
     } catch (err) {
       setMessage({
         type: "error",
@@ -97,6 +92,37 @@ export default function BookPage() {
     } finally {
       setUploading(false);
     }
+  }
+
+  async function handleConfirmScan() {
+    if (!scannedText.trim()) return;
+    try {
+      await createHighlight({
+        book_id: bookId,
+        text: scannedText.trim(),
+        note: photoNote.trim(),
+        page_number: photoPage ? parseInt(photoPage) : undefined,
+        source: "ocr",
+        source_image: scannedImage,
+      });
+      setScannedText("");
+      setScannedImage("");
+      setShowScanReview(false);
+      setPhotoFile(null);
+      setPhotoPage("");
+      setPhotoNote("");
+      setShowPhotoUpload(false);
+      setMessage({ type: "success", text: "Highlight saved" });
+      loadBook();
+    } catch {
+      setMessage({ type: "error", text: "Failed to save highlight" });
+    }
+  }
+
+  function handleDiscardScan() {
+    setScannedText("");
+    setScannedImage("");
+    setShowScanReview(false);
   }
 
   async function handleDelete(highlightId: string) {
@@ -210,8 +236,8 @@ export default function BookPage() {
       )}
 
       {/* Photo upload form */}
-      {showPhotoUpload && (
-        <form onSubmit={handlePhotoUpload} style={{ marginBottom: "2rem" }}>
+      {showPhotoUpload && !showScanReview && (
+        <form onSubmit={handleScanPhoto} style={{ marginBottom: "2rem" }}>
           <div className="form-group">
             <label>Photo of book page</label>
             <div
@@ -249,9 +275,32 @@ export default function BookPage() {
             </div>
           </div>
           <button type="submit" className="btn btn-primary" disabled={!photoFile || uploading}>
-            {uploading ? "Processing..." : "Scan & Extract"}
+            {uploading ? "Scanning..." : "Scan & Extract"}
           </button>
         </form>
+      )}
+
+      {/* OCR review step */}
+      {showScanReview && (
+        <div style={{ marginBottom: "2rem" }}>
+          <div className="form-group">
+            <label>Extracted text — review and edit before saving</label>
+            <textarea
+              value={scannedText}
+              onChange={(e) => setScannedText(e.target.value)}
+              rows={12}
+              style={{ fontFamily: "inherit" }}
+            />
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button className="btn btn-primary" onClick={handleConfirmScan}>
+              Save Highlight
+            </button>
+            <button className="btn" onClick={handleDiscardScan}>
+              Discard
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Highlights list */}

@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Book, Highlight
-from app.schemas import HighlightCreate, HighlightUpdate, HighlightOut, SearchResult
+from app.schemas import HighlightCreate, HighlightUpdate, HighlightOut, ScanResult, SearchResult
 from app.services.ocr import extract_text_from_image
 from app.config import UPLOAD_DIR
 
@@ -39,43 +39,25 @@ async def create_highlight(data: HighlightCreate, db: AsyncSession = Depends(get
     return highlight
 
 
-@router.post("/from-photo", response_model=HighlightOut, status_code=201)
-async def create_highlight_from_photo(
-    book_id: str = Form(...),
-    page_number: int | None = Form(None),
-    note: str = Form(""),
+@router.post("/scan", response_model=ScanResult)
+async def scan_page_photo(
     photo: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
 ):
-    """Upload a photo of a book page and extract highlights via OCR."""
-    book = await db.get(Book, book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
+    """Upload a photo of a book page and extract text via OCR.
 
-    # Save uploaded image
+    Returns the extracted text for user review — does NOT save anything.
+    """
     ext = Path(photo.filename).suffix if photo.filename else ".jpg"
     filename = f"{uuid.uuid4()}{ext}"
     filepath = UPLOAD_DIR / filename
     contents = await photo.read()
     filepath.write_bytes(contents)
 
-    # Run OCR
     extracted_text = extract_text_from_image(str(filepath))
     if not extracted_text.strip():
         raise HTTPException(status_code=422, detail="Could not extract text from image")
 
-    highlight = Highlight(
-        book_id=book_id,
-        text=extracted_text,
-        note=note,
-        page_number=page_number,
-        source="ocr",
-        source_image=filename,
-    )
-    db.add(highlight)
-    await db.commit()
-    await db.refresh(highlight)
-    return highlight
+    return ScanResult(text=extracted_text, source_image=filename)
 
 
 @router.patch("/{highlight_id}", response_model=HighlightOut)
