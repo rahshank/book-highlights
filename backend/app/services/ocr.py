@@ -27,7 +27,14 @@ SYSTEM_PROMPT = (
 
 VISION_PROMPT = (
     "Perform OCR on this photograph of a printed book page. "
+    "IMPORTANT: If the photo shows an open book with two visible pages, "
+    "transcribe ONLY the page that is most clearly readable and facing the "
+    "camera directly. Ignore any partially obscured, angled, or blurry page "
+    "on the other side — do NOT attempt to read it. "
     "Return ONLY the transcribed text, preserving paragraph breaks. "
+    "Do not repeat or duplicate any lines. "
+    "If a portion of text is unreadable or garbled, skip it entirely rather "
+    "than guessing. "
     "If there are highlighted or underlined passages, wrap each one in **bold**. "
     "Do not add commentary, headers, or explanations — just the verbatim text."
 )
@@ -274,6 +281,40 @@ def _extract_with_tesseract(image_path: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Post-processing
+# ---------------------------------------------------------------------------
+
+
+def _deduplicate_lines(text: str) -> str:
+    """Remove consecutive duplicate lines/phrases from OCR output.
+
+    OCR engines sometimes read the same line twice when text is visible
+    in overlapping regions (e.g. top of page repeated from strip overlap,
+    or the same sentence appearing at the bottom of one page and top of
+    the next in an open book photo).
+    """
+    lines = text.split("\n")
+    deduped: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        # Skip if this line is identical to the previous non-empty line
+        if stripped and deduped:
+            prev = deduped[-1].strip()
+            if stripped == prev:
+                continue
+            # Also catch near-duplicates: line is a substring of previous or vice versa
+            # (handles partial line duplication at strip boundaries)
+            if len(stripped) > 20 and len(prev) > 20:
+                if stripped in prev or prev in stripped:
+                    # Keep the longer one
+                    if len(stripped) > len(prev):
+                        deduped[-1] = line
+                    continue
+        deduped.append(line)
+    return "\n".join(deduped)
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -286,5 +327,5 @@ def extract_text_from_image(image_path: str) -> str:
     """
     result = _extract_with_claude(image_path)
     if result:
-        return result
-    return _extract_with_tesseract(image_path)
+        return _deduplicate_lines(result)
+    return _deduplicate_lines(_extract_with_tesseract(image_path))
