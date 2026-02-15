@@ -22,9 +22,27 @@ def _lookup_open_library(isbn: str) -> dict | None:
         publish_date = data.get("publish_date", "")
         year = publish_date.split(",")[-1].strip() if publish_date else ""
 
-        # Resolve author names from author keys
+        # Resolve author names — check edition first, then the work record
+        author_refs = data.get("authors", [])
+        if not author_refs:
+            for work_ref in data.get("works", []):
+                work_key = work_ref.get("key", "")
+                if work_key:
+                    try:
+                        work = httpx.get(
+                            f"https://openlibrary.org{work_key}.json", timeout=10
+                        ).json()
+                        author_refs = work.get("authors", [])
+                        # Work records use {"author": {"key": ...}} instead of {"key": ...}
+                        author_refs = [
+                            ref.get("author", ref) for ref in author_refs
+                        ]
+                    except Exception:
+                        pass
+                    break
+
         authors = []
-        for ref in data.get("authors", []):
+        for ref in author_refs:
             key = ref.get("key", "")
             if key:
                 try:
