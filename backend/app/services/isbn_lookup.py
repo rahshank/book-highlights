@@ -15,7 +15,15 @@ def lookup_isbn(isbn: str) -> dict | None:
     if not isbn:
         return None
 
-    meta = isbnlib.meta(isbn, service="default")
+    # Try multiple services — Google Books can be spotty
+    meta = None
+    for service in ("default", "openl"):
+        try:
+            meta = isbnlib.meta(isbn, service=service)
+            if meta and meta.get("Title"):
+                break
+        except Exception:
+            continue
     if not meta:
         return None
 
