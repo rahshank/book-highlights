@@ -3,7 +3,12 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.config import DATABASE_URL
 
-engine = create_async_engine(DATABASE_URL, echo=False)
+_engine_kwargs: dict = {"echo": False}
+if DATABASE_URL.startswith("postgresql"):
+    _engine_kwargs.update(pool_size=5, max_overflow=10)
+else:
+    _engine_kwargs.update(connect_args={"check_same_thread": False})
+engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

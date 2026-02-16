@@ -11,7 +11,22 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{DATA_DIR / 'highlights.db'}")
+
+# Database: set DATABASE_URL to your Supabase PostgreSQL connection string
+# Format: postgresql+asyncpg://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
+# Falls back to local SQLite if not set
+_db_url = os.getenv("DATABASE_URL", "")
+if _db_url:
+    # Support standard postgres:// URLs by converting to asyncpg dialect
+    if _db_url.startswith("postgres://"):
+        _db_url = _db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif _db_url.startswith("postgresql://"):
+        _db_url = _db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    DATABASE_URL = _db_url
+    print(f"[CONFIG] Using PostgreSQL database")
+else:
+    DATABASE_URL = f"sqlite+aiosqlite:///{DATA_DIR / 'highlights.db'}"
+    print(f"[CONFIG] Using local SQLite database (set DATABASE_URL for Supabase)")
 
 # Anthropic API key for Claude vision OCR
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
