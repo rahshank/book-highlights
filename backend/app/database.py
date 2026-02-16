@@ -9,9 +9,7 @@ if DATABASE_URL.startswith("postgresql"):
     _engine_kwargs.update(
         # PgBouncer handles pooling — use NullPool on SQLAlchemy side
         poolclass=NullPool,
-        # Disable both SQLAlchemy's and asyncpg's prepared statement caches
-        # (PgBouncer in transaction mode doesn't support prepared statements)
-        prepared_statement_cache_size=0,
+        # PgBouncer in transaction mode doesn't support prepared statements
         connect_args={"statement_cache_size": 0},
     )
 else:
