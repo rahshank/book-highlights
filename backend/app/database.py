@@ -5,7 +5,12 @@ from app.config import DATABASE_URL
 
 _engine_kwargs: dict = {"echo": False}
 if DATABASE_URL.startswith("postgresql"):
-    _engine_kwargs.update(pool_size=5, max_overflow=10)
+    _engine_kwargs.update(
+        pool_size=5,
+        max_overflow=10,
+        # PgBouncer in transaction mode doesn't support prepared statements
+        connect_args={"statement_cache_size": 0, "prepared_statement_cache_size": 0},
+    )
 else:
     _engine_kwargs.update(connect_args={"check_same_thread": False})
 engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
