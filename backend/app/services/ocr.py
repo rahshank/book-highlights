@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import io
 import logging
 import mimetypes
 import time
@@ -21,23 +20,25 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT = (
     "You are an OCR transcription engine for a personal reading tracker app. "
     "The user photographs pages from published books they own so they can save "
-    "highlights and quotations for personal study. Accurately transcribe the "
-    "printed text visible in the photograph. This is a purely mechanical "
-    "transcription task — reproduce the text exactly as printed."
+    "highlights and quotations for personal study. Your job is to extract ONLY "
+    "the passages that the reader has highlighted, underlined, or otherwise "
+    "marked. This is a purely mechanical transcription task."
 )
 
 VISION_PROMPT = (
-    "Perform OCR on this photograph of a printed book page. "
-    "IMPORTANT: If the photo shows an open book with two visible pages, "
-    "transcribe ONLY the page that is most clearly readable and facing the "
-    "camera directly. Ignore any partially obscured, angled, or blurry page "
-    "on the other side — do NOT attempt to read it. "
-    "Return ONLY the transcribed text, preserving paragraph breaks. "
-    "Do not repeat or duplicate any lines. "
-    "If a portion of text is unreadable or garbled, skip it entirely rather "
-    "than guessing. "
-    "If there are highlighted or underlined passages, wrap each one in **bold**. "
-    "Do not add commentary, headers, or explanations — just the verbatim text."
+    "Look at this photograph of a printed book page. The reader has marked "
+    "certain passages by underlining, highlighting, or bracketing them. "
+    "Extract ONLY the marked/highlighted/underlined passages — ignore all "
+    "unmarked text on the page. "
+    "If the photo shows two pages of an open book, check both for markings "
+    "but ignore any page with no marked text. "
+    "Return each highlighted passage on its own line, preserving the original "
+    "wording exactly. "
+    "If a marked passage is partially unreadable, transcribe what you can read "
+    "and use [...] for illegible portions. "
+    "Do not add commentary, headers, page numbers, or explanations. "
+    "If there are no highlighted or underlined passages visible, respond with "
+    "exactly: NO_HIGHLIGHTS_FOUND"
 )
 
 MODELS = [
@@ -74,7 +75,9 @@ def _call_claude(client: anthropic.Anthropic, model: str, image_data: str, mime_
         ],
     )
     text = message.content[0].text.strip()
-    return text if text else None
+    if not text or "NO_HIGHLIGHTS_FOUND" in text:
+        return None
+    return text
 
 
 def _encode_image(image_path: str) -> tuple[str, str]:
@@ -116,53 +119,65 @@ def _try_claude_whole_image(client: anthropic.Anthropic, image_path: str) -> str
     return None
 
 
-def _merge_overlapping_texts(texts: list[str]) -> str:
-    """Merge OCR results from overlapping image strips.
+def _deduplicate_highlights(texts: list[str]) -> str:
+    """Merge highlight results from overlapping image strips.
 
-    Each consecutive pair of strips shares ~20% visual overlap, so their
-    OCR text will have a shared passage at the boundary.  We find the
-    longest common overlap between the end of text[i] and the start of
-    text[i+1] and merge at that point to avoid duplication or lost text.
+    Each strip returns only the highlighted/underlined passages it can see.
+    Because strips overlap, the same passage may appear in multiple strips.
+    We deduplicate by checking if a passage from a later strip is already
+    substantially contained in the collected results.
     """
     if not texts:
         return ""
     if len(texts) == 1:
         return texts[0]
 
-    merged = texts[0]
-    for i in range(1, len(texts)):
-        prev = merged
-        curr = texts[i]
+    # Collect individual passages from all strips
+    seen_passages: list[str] = []
+    for text in texts:
+        # Skip NO_HIGHLIGHTS_FOUND responses
+        if "NO_HIGHLIGHTS_FOUND" in text:
+            continue
+        for line in text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            # Check if this passage is already covered
+            is_dup = False
+            for j, existing in enumerate(seen_passages):
+                # Exact match
+                if line == existing:
+                    is_dup = True
+                    break
+                # Fuzzy: one is a substantial substring of the other
+                shorter, longer = (line, existing) if len(line) <= len(existing) else (existing, line)
+                if len(shorter) > 20 and shorter in longer:
+                    # Keep the longer version
+                    if len(line) > len(existing):
+                        seen_passages[j] = line
+                    is_dup = True
+                    break
+                # Word-level overlap: if 60%+ of words match, treat as duplicate
+                line_words = set(line.lower().split())
+                existing_words = set(existing.lower().split())
+                if line_words and existing_words:
+                    overlap = len(line_words & existing_words)
+                    smaller_set = min(len(line_words), len(existing_words))
+                    if smaller_set > 5 and overlap / smaller_set > 0.6:
+                        # Keep the longer version
+                        if len(line) > len(existing):
+                            seen_passages[j] = line
+                        is_dup = True
+                        break
+            if not is_dup:
+                seen_passages.append(line)
 
-        # Normalise whitespace for matching — compare word sequences
-        prev_words = prev.split()
-        curr_words = curr.split()
+    if not seen_passages:
+        return ""
 
-        # Try to find an overlap: look for the longest suffix of prev
-        # that matches a prefix of curr (in terms of words).
-        # Check from longest possible overlap down to a minimum of 4 words.
-        best_overlap = 0
-        min_overlap_words = 4
-        max_check = min(len(prev_words), len(curr_words), 80)
-
-        for length in range(max_check, min_overlap_words - 1, -1):
-            if prev_words[-length:] == curr_words[:length]:
-                best_overlap = length
-                break
-
-        if best_overlap > 0:
-            # Found overlap — take everything from curr after the overlapping words
-            remainder_words = curr_words[best_overlap:]
-            print(f"[OCR] Merge: found {best_overlap}-word overlap between strips {i} and {i + 1}")
-            if remainder_words:
-                merged = merged.rstrip() + "\n" + " ".join(remainder_words)
-            # else: curr was entirely contained in prev, skip it
-        else:
-            # No overlap found — just concatenate with paragraph break
-            print(f"[OCR] Merge: no overlap found between strips {i} and {i + 1}, concatenating")
-            merged = merged.rstrip() + "\n\n" + curr.lstrip()
-
-    return merged
+    result = "\n\n".join(seen_passages)
+    print(f"[OCR] Deduplicated to {len(seen_passages)} unique highlight(s)")
+    return result
 
 
 def _try_claude_split(client: anthropic.Anthropic, image_path: str, num_strips: int = 3) -> str | None:
@@ -215,7 +230,7 @@ def _try_claude_split(client: anthropic.Anthropic, image_path: str, num_strips: 
     if not results:
         return None
 
-    combined = _merge_overlapping_texts(results)
+    combined = _deduplicate_highlights(results)
     print(f"[OCR] Split strategy recovered {len(results)}/{num_strips} strips ({len(combined)} chars)")
     return combined
 
