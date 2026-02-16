@@ -9,7 +9,7 @@ if DATABASE_URL.startswith("postgresql"):
         pool_size=5,
         max_overflow=10,
         # PgBouncer in transaction mode doesn't support prepared statements
-        connect_args={"statement_cache_size": 0, "prepared_statement_cache_size": 0},
+        connect_args={"statement_cache_size": 0},
     )
 else:
     _engine_kwargs.update(connect_args={"check_same_thread": False})
