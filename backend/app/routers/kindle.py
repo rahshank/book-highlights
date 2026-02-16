@@ -4,8 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Book, Highlight
-from app.schemas import BookSummary
+from app.schemas import BookSummary, NotebookPasteRequest
 from app.services.kindle import parse_clippings, group_by_book
+from app.services.notebook_parser import parse_notebook_paste
 
 router = APIRouter(prefix="/api/kindle", tags=["kindle"])
 
@@ -77,3 +78,68 @@ async def import_kindle_clippings(
 
     await db.commit()
     return imported_books
+
+
+@router.post("/import-notebook", response_model=BookSummary)
+async def import_notebook_paste(
+    req: NotebookPasteRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Import highlights from text pasted from read.amazon.com/notebook.
+
+    Parses the pasted text to extract book info and highlights.
+    Deduplicates against existing highlights by text content.
+    Safe to call repeatedly with the same paste — only new highlights are added.
+    """
+    parsed = parse_notebook_paste(req.text, title=req.title, author=req.author)
+
+    if not parsed.title:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail="Could not detect book title. Please provide it in the title field.",
+        )
+
+    # Find or create the book
+    stmt = select(Book).where(Book.title == parsed.title, Book.author == parsed.author)
+    result = await db.execute(stmt)
+    book = result.scalar_one_or_none()
+
+    if not book:
+        book = Book(title=parsed.title, author=parsed.author, source="kindle")
+        db.add(book)
+        await db.flush()
+
+    # Get existing highlight texts for deduplication
+    existing_stmt = select(Highlight.text).where(Highlight.book_id == book.id)
+    existing_result = await db.execute(existing_stmt)
+    existing_texts = {row[0] for row in existing_result.all()}
+
+    added = 0
+    for h in parsed.highlights:
+        if h.text in existing_texts:
+            continue
+        highlight = Highlight(
+            book_id=book.id,
+            text=h.text,
+            note=h.note,
+            page_number=h.page,
+            location=h.location,
+            source="kindle",
+        )
+        db.add(highlight)
+        existing_texts.add(h.text)  # prevent dupes within same paste
+        added += 1
+
+    await db.commit()
+
+    return BookSummary(
+        id=book.id,
+        title=book.title,
+        author=book.author,
+        isbn=book.isbn,
+        cover_url=book.cover_url,
+        source=book.source,
+        created_at=book.created_at,
+        highlight_count=added,
+    )

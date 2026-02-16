@@ -106,6 +106,14 @@ class ScanResult(BaseModel):
     detected_page: int | None = None
 
 
+# --- Notebook paste import ---
+
+class NotebookPasteRequest(BaseModel):
+    text: str
+    title: str = ""  # optional override if auto-detection fails
+    author: str = ""  # optional override if auto-detection fails
+
+
 # --- Publishing ---
 
 class PublishRequest(BaseModel):

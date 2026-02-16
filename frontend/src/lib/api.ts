@@ -138,6 +138,18 @@ export async function importKindle(file: File): Promise<BookSummary[]> {
   });
 }
 
+export async function importNotebookPaste(data: {
+  text: string;
+  title?: string;
+  author?: string;
+}): Promise<BookSummary> {
+  return fetchJSON(`${API_BASE}/kindle/import-notebook`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
 export async function lookupISBN(isbn: string): Promise<{
   title: string;
   author: string;
