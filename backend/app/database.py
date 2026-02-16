@@ -1,14 +1,17 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 from app.config import DATABASE_URL
 
 _engine_kwargs: dict = {"echo": False}
 if DATABASE_URL.startswith("postgresql"):
     _engine_kwargs.update(
-        pool_size=5,
-        max_overflow=10,
-        # PgBouncer in transaction mode doesn't support prepared statements
+        # PgBouncer handles pooling — use NullPool on SQLAlchemy side
+        poolclass=NullPool,
+        # Disable both SQLAlchemy's and asyncpg's prepared statement caches
+        # (PgBouncer in transaction mode doesn't support prepared statements)
+        prepared_statement_cache_size=0,
         connect_args={"statement_cache_size": 0},
     )
 else:
