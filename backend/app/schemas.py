@@ -103,6 +103,7 @@ class SearchResult(BaseModel):
 class ScanResult(BaseModel):
     text: str
     source_image: str
+    detected_page: int | None = None
 
 
 # --- Publishing ---

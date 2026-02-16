@@ -41,6 +41,7 @@ export default function BookPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [editNote, setEditNote] = useState("");
+  const [editPage, setEditPage] = useState("");
 
   const loadBook = useCallback(async () => {
     try {
@@ -83,6 +84,9 @@ export default function BookPage() {
       const result = await scanPagePhoto(photoFile);
       setScannedText(result.text);
       setScannedImage(result.source_image);
+      if (result.detected_page && !photoPage) {
+        setPhotoPage(String(result.detected_page));
+      }
       setShowScanReview(true);
     } catch (err) {
       setMessage({
@@ -136,7 +140,11 @@ export default function BookPage() {
 
   async function handleSaveEdit(highlightId: string) {
     try {
-      await updateHighlight(highlightId, { text: editText, note: editNote });
+      await updateHighlight(highlightId, {
+        text: editText,
+        note: editNote,
+        page_number: editPage ? parseInt(editPage) : null,
+      });
       setEditingId(null);
       loadBook();
     } catch {
@@ -292,6 +300,26 @@ export default function BookPage() {
               style={{ fontFamily: "inherit" }}
             />
           </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Note (optional)</label>
+              <input
+                type="text"
+                value={photoNote}
+                onChange={(e) => setPhotoNote(e.target.value)}
+                placeholder="Your note about this passage"
+              />
+            </div>
+            <div className="form-group">
+              <label>Page number{photoPage ? " (detected)" : ""}</label>
+              <input
+                type="number"
+                value={photoPage}
+                onChange={(e) => setPhotoPage(e.target.value)}
+                placeholder="42"
+              />
+            </div>
+          </div>
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <button className="btn btn-primary" onClick={handleConfirmScan}>
               Save Highlight
@@ -319,13 +347,21 @@ export default function BookPage() {
                   onChange={(e) => setEditText(e.target.value)}
                   style={{ marginBottom: "0.5rem" }}
                 />
-                <input
-                  type="text"
-                  value={editNote}
-                  onChange={(e) => setEditNote(e.target.value)}
-                  placeholder="Note"
-                  style={{ marginBottom: "0.5rem" }}
-                />
+                <div className="form-row" style={{ marginBottom: "0.5rem" }}>
+                  <input
+                    type="text"
+                    value={editNote}
+                    onChange={(e) => setEditNote(e.target.value)}
+                    placeholder="Note"
+                  />
+                  <input
+                    type="number"
+                    value={editPage}
+                    onChange={(e) => setEditPage(e.target.value)}
+                    placeholder="Page #"
+                    style={{ maxWidth: "100px" }}
+                  />
+                </div>
                 <div style={{ display: "flex", gap: "0.5rem" }}>
                   <button className="btn btn-primary btn-sm" onClick={() => handleSaveEdit(h.id)}>
                     Save
@@ -340,13 +376,15 @@ export default function BookPage() {
                 {h.text && <div className="text">&ldquo;{h.text}&rdquo;</div>}
                 {h.note && <div className="note">Note: {h.note}</div>}
                 <div className="meta">
-                  {[
-                    h.page_number ? `Page ${h.page_number}` : null,
-                    h.location ? `Location ${h.location}` : null,
-                    h.source,
-                  ]
-                    .filter(Boolean)
-                    .join(" \u00b7 ")}
+                  <span>
+                    {[
+                      h.page_number ? `Page ${h.page_number}` : null,
+                      h.location ? `Location ${h.location}` : null,
+                      h.source,
+                    ]
+                      .filter(Boolean)
+                      .join(" \u00b7 ")}
+                  </span>
                   {h.created_at && (
                     <span className="timestamp">
                       {new Date(h.created_at).toLocaleDateString("en-US", {
@@ -364,6 +402,7 @@ export default function BookPage() {
                       setEditingId(h.id);
                       setEditText(h.text);
                       setEditNote(h.note);
+                      setEditPage(h.page_number ? String(h.page_number) : "");
                     }}
                   >
                     Edit

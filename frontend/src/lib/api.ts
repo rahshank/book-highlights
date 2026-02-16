@@ -96,6 +96,7 @@ export async function createHighlight(data: {
 export interface ScanResult {
   text: string;
   source_image: string;
+  detected_page: number | null;
 }
 
 export async function scanPagePhoto(file: File): Promise<ScanResult> {
@@ -115,7 +116,7 @@ export async function deleteHighlight(id: string): Promise<void> {
 
 export async function updateHighlight(
   id: string,
-  data: { text?: string; note?: string }
+  data: { text?: string; note?: string; page_number?: number | null }
 ): Promise<Highlight> {
   return fetchJSON(`${API_BASE}/highlights/${id}`, {
     method: "PATCH",

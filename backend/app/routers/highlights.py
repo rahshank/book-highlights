@@ -56,14 +56,14 @@ async def scan_page_photo(
         filepath.write_bytes(contents)
         print(f"[SCAN] Saved upload to {filepath} ({len(contents)} bytes)")
 
-        extracted_text = await asyncio.get_event_loop().run_in_executor(
+        extracted_text, detected_page = await asyncio.get_event_loop().run_in_executor(
             None, extract_text_from_image, str(filepath)
         )
         if not extracted_text.strip():
             raise HTTPException(status_code=422, detail="Could not extract text from image")
 
-        print(f"[SCAN] Success — {len(extracted_text)} chars extracted")
-        return ScanResult(text=extracted_text, source_image=filename)
+        print(f"[SCAN] Success — {len(extracted_text)} chars extracted, page={detected_page}")
+        return ScanResult(text=extracted_text, source_image=filename, detected_page=detected_page)
     except HTTPException:
         raise
     except Exception as exc:

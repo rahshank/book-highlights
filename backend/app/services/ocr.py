@@ -42,8 +42,12 @@ VISION_PROMPT = (
     "If an underline or highlight covers only part of a sentence, include the "
     "FULL sentence so the passage reads naturally.\n\n"
     "If a marked passage is partially unreadable, transcribe what you can read "
-    "and use [...] for illegible portions. "
-    "Do not add commentary, headers, page numbers, or explanations. "
+    "and use [...] for illegible portions.\n\n"
+    "PAGE NUMBER: If you can see a printed page number on the page, include it "
+    "on the very first line in this exact format: PAGE: <number>\n"
+    "If two page numbers are visible (open book), use the page with the marked "
+    "passages. If no page number is visible, omit the PAGE line entirely.\n\n"
+    "Do not add any other commentary, headers, or explanations. "
     "If there are no highlighted or underlined passages visible, respond with "
     "exactly: NO_HIGHLIGHTS_FOUND"
 )
@@ -408,12 +412,28 @@ def _deduplicate_lines(text: str) -> str:
     return "\n".join(deduped)
 
 
+def _parse_page_number(text: str) -> tuple[str, int | None]:
+    """Extract a PAGE: N line from the OCR output if present.
+
+    Returns (remaining_text, page_number).
+    """
+    lines = text.split("\n")
+    if lines and lines[0].strip().upper().startswith("PAGE:"):
+        page_str = lines[0].strip().split(":", 1)[1].strip()
+        remaining = "\n".join(lines[1:]).strip()
+        try:
+            return remaining, int(page_str)
+        except ValueError:
+            pass
+    return text, None
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 
-def extract_text_from_image(image_path: str) -> str:
+def extract_text_from_image(image_path: str) -> tuple[str, int | None]:
     """Extract text from a book page image.
 
     Uses Claude vision API for high-quality results, falling back to
@@ -425,11 +445,14 @@ def extract_text_from_image(image_path: str) -> str:
     result = _extract_with_claude(image_path)
     if result:
         result = _deduplicate_lines(result)
+        text, page = _parse_page_number(result)
         total = time.monotonic() - total_start
-        print(f"[OCR] DONE (Claude) — {len(result)} chars in {total:.1f}s total")
-        return result
+        if page:
+            print(f"[OCR] Detected page number: {page}")
+        print(f"[OCR] DONE (Claude) — {len(text)} chars in {total:.1f}s total")
+        return text, page
 
     result = _deduplicate_lines(_extract_with_tesseract(image_path))
     total = time.monotonic() - total_start
     print(f"[OCR] DONE (Tesseract fallback) — {len(result)} chars in {total:.1f}s total")
-    return result
+    return result, None
