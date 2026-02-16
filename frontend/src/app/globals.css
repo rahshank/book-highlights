@@ -121,6 +121,14 @@ nav a:hover {
   color: var(--muted);
   font-size: 0.8rem;
   margin-top: 0.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.highlight-card .timestamp {
+  font-size: 0.75rem;
+  color: var(--muted);
+  opacity: 0.7;
 }
 
 /* Buttons */

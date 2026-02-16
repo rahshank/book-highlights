@@ -347,6 +347,15 @@ export default function BookPage() {
                   ]
                     .filter(Boolean)
                     .join(" \u00b7 ")}
+                  {h.created_at && (
+                    <span className="timestamp">
+                      {new Date(h.created_at).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </span>
+                  )}
                 </div>
                 <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.5rem" }}>
                   <button
