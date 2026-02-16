@@ -6,6 +6,7 @@ import { getBooks, createBook, deleteBook, lookupISBN, type BookSummary } from "
 
 export default function HomePage() {
   const [books, setBooks] = useState<BookSummary[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
@@ -21,6 +22,8 @@ export default function HomePage() {
       setBooks(await getBooks());
     } catch {
       setMessage({ type: "error", text: "Failed to load books" });
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -125,7 +128,7 @@ export default function HomePage() {
         </form>
       )}
 
-      {books.length === 0 ? (
+      {loading ? null : books.length === 0 ? (
         <div className="empty">
           <p>No books yet. Add a book or import Kindle highlights to get started.</p>
         </div>
