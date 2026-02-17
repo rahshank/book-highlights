@@ -1,14 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #fafaf9;
-  --fg: #1c1917;
-  --muted: #78716c;
-  --border: #d6d3d1;
-  --accent: #b45309;
-  --accent-light: #fef3c7;
-  --card: #ffffff;
-  --highlight-bg: #fffbeb;
+  --bg: #f5f0eb;
+  --fg: #2d2a26;
+  --muted: #8a7e74;
+  --border: #d4c9bd;
+  --accent: #5f7a6a;
+  --accent-hover: #4d6556;
+  --accent-light: #e8ede9;
+  --card: #fffdf9;
+  --highlight-bg: #f9f0e8;
+  --rose: #c4908a;
+  --rose-light: #f2e0dd;
+  --ochre: #c4913e;
 }
 
 * {
@@ -22,10 +26,11 @@ body {
   background: var(--bg);
   color: var(--fg);
   line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
-  color: var(--accent);
+  color: var(--ochre);
   text-decoration: none;
 }
 a:hover {
@@ -53,7 +58,7 @@ h2 {
 
 /* Nav */
 nav {
-  background: var(--card);
+  background: var(--fg);
   border-bottom: 1px solid var(--border);
   padding: 1rem 1.5rem;
   position: sticky;
@@ -70,14 +75,15 @@ nav .nav-inner {
 nav .logo {
   font-weight: 700;
   font-size: 1.25rem;
-  color: var(--fg);
+  color: var(--bg);
+  letter-spacing: 0.02em;
 }
 nav a {
-  color: var(--muted);
+  color: var(--border);
   font-size: 0.95rem;
 }
 nav a:hover {
-  color: var(--fg);
+  color: var(--bg);
   text-decoration: none;
 }
 
@@ -105,7 +111,7 @@ nav a:hover {
 /* Highlights */
 .highlight-card {
   background: var(--highlight-bg);
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--ochre);
   padding: 1rem 1.25rem;
   margin-bottom: 1rem;
   border-radius: 0 6px 6px 0;
@@ -154,14 +160,15 @@ nav a:hover {
   border-color: var(--accent);
 }
 .btn-primary:hover {
-  background: #92400e;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 .btn-danger {
-  color: #dc2626;
-  border-color: #dc2626;
+  color: var(--rose);
+  border-color: var(--rose);
 }
 .btn-danger:hover {
-  background: #fef2f2;
+  background: var(--rose-light);
 }
 .btn-sm {
   padding: 0.25rem 0.5rem;
@@ -218,11 +225,11 @@ label {
   transition: border-color 0.15s;
 }
 .upload-area:hover {
-  border-color: var(--accent);
+  border-color: var(--ochre);
 }
 .upload-area.active {
-  border-color: var(--accent);
-  background: var(--accent-light);
+  border-color: var(--ochre);
+  background: var(--highlight-bg);
 }
 
 /* Status messages */
@@ -233,14 +240,14 @@ label {
   font-size: 0.9rem;
 }
 .message-success {
-  background: #ecfdf5;
-  color: #065f46;
-  border: 1px solid #a7f3d0;
+  background: var(--accent-light);
+  color: var(--accent-hover);
+  border: 1px solid var(--accent);
 }
 .message-error {
-  background: #fef2f2;
-  color: #991b1b;
-  border: 1px solid #fecaca;
+  background: var(--rose-light);
+  color: #7a3b35;
+  border: 1px solid var(--rose);
 }
 
 /* Actions bar */
