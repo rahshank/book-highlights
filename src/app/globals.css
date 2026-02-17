@@ -1,18 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #1c1311;
-  --fg: #eeddd5;
-  --muted: #9a857c;
-  --border: #3a2a24;
-  --accent: #2eb882;
-  --accent-hover: #24966a;
-  --accent-light: #1a3329;
-  --card: #2a1e1a;
-  --highlight-bg: #302220;
-  --rose: #d4656e;
-  --rose-light: #3a2020;
-  --ochre: #d4960a;
+  --bg: #fafaf9;
+  --fg: #1c1917;
+  --muted: #78716c;
+  --border: #d6d3d1;
+  --accent: #b45309;
+  --accent-light: #fef3c7;
+  --card: #ffffff;
+  --highlight-bg: #fffbeb;
 }
 
 * {
@@ -26,11 +22,10 @@ body {
   background: var(--bg);
   color: var(--fg);
   line-height: 1.7;
-  -webkit-font-smoothing: antialiased;
 }
 
 a {
-  color: var(--ochre);
+  color: var(--accent);
   text-decoration: none;
 }
 a:hover {
@@ -58,7 +53,7 @@ h2 {
 
 /* Nav */
 nav {
-  background: var(--fg);
+  background: var(--card);
   border-bottom: 1px solid var(--border);
   padding: 1rem 1.5rem;
   position: sticky;
@@ -75,8 +70,7 @@ nav .nav-inner {
 nav .logo {
   font-weight: 700;
   font-size: 1.25rem;
-  color: var(--ochre);
-  letter-spacing: 0.02em;
+  color: var(--fg);
 }
 nav a {
   color: var(--muted);
@@ -97,7 +91,7 @@ nav a:hover {
   transition: box-shadow 0.15s;
 }
 .book-card:hover {
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 .book-card h3 {
   font-size: 1.1rem;
@@ -111,7 +105,7 @@ nav a:hover {
 /* Highlights */
 .highlight-card {
   background: var(--highlight-bg);
-  border-left: 4px solid var(--ochre);
+  border-left: 3px solid var(--accent);
   padding: 1rem 1.25rem;
   margin-bottom: 1rem;
   border-radius: 0 6px 6px 0;
@@ -152,7 +146,7 @@ nav a:hover {
   transition: background 0.15s;
 }
 .btn:hover {
-  background: var(--highlight-bg);
+  background: var(--bg);
 }
 .btn-primary {
   background: var(--accent);
@@ -160,15 +154,14 @@ nav a:hover {
   border-color: var(--accent);
 }
 .btn-primary:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  background: #92400e;
 }
 .btn-danger {
-  color: var(--rose);
-  border-color: var(--rose);
+  color: #dc2626;
+  border-color: #dc2626;
 }
 .btn-danger:hover {
-  background: var(--rose-light);
+  background: #fef2f2;
 }
 .btn-sm {
   padding: 0.25rem 0.5rem;
@@ -225,11 +218,11 @@ label {
   transition: border-color 0.15s;
 }
 .upload-area:hover {
-  border-color: var(--ochre);
+  border-color: var(--accent);
 }
 .upload-area.active {
-  border-color: var(--ochre);
-  background: var(--highlight-bg);
+  border-color: var(--accent);
+  background: var(--accent-light);
 }
 
 /* Status messages */
@@ -240,14 +233,14 @@ label {
   font-size: 0.9rem;
 }
 .message-success {
-  background: var(--accent-light);
-  color: var(--accent);
-  border: 1px solid var(--accent);
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
 }
 .message-error {
-  background: var(--rose-light);
-  color: var(--rose);
-  border: 1px solid var(--rose);
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
 }
 
 /* Actions bar */
