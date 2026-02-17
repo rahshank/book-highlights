@@ -1,18 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #f3ece4;
-  --fg: #1a1816;
-  --muted: #6b5e53;
-  --border: #c4b5a5;
-  --accent: #2d6b50;
-  --accent-hover: #1e5039;
-  --accent-light: #d4e8dc;
-  --card: #ffffff;
-  --highlight-bg: #fdf3e7;
-  --rose: #b5454a;
-  --rose-light: #f5dada;
-  --ochre: #c07d1a;
+  --bg: #d4a49a;
+  --fg: #1a110f;
+  --muted: #4a3530;
+  --border: #b8867c;
+  --accent: #1a6b52;
+  --accent-hover: #13503c;
+  --accent-light: #c2ddd0;
+  --card: #faf3ef;
+  --highlight-bg: #f5e4d4;
+  --rose: #a8303a;
+  --rose-light: #efc5c5;
+  --ochre: #bf7008;
 }
 
 * {
@@ -30,8 +30,9 @@ body {
 }
 
 a {
-  color: var(--ochre);
+  color: var(--fg);
   text-decoration: none;
+  font-weight: 600;
 }
 a:hover {
   text-decoration: underline;
@@ -75,15 +76,15 @@ nav .nav-inner {
 nav .logo {
   font-weight: 700;
   font-size: 1.25rem;
-  color: var(--bg);
+  color: #f0d5c8;
   letter-spacing: 0.02em;
 }
 nav a {
-  color: var(--border);
+  color: #c4978c;
   font-size: 0.95rem;
 }
 nav a:hover {
-  color: var(--bg);
+  color: #f0d5c8;
   text-decoration: none;
 }
 
@@ -97,7 +98,7 @@ nav a:hover {
   transition: box-shadow 0.15s;
 }
 .book-card:hover {
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 16px rgba(26, 17, 15, 0.15);
 }
 .book-card h3 {
   font-size: 1.1rem;

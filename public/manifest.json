@@ -4,8 +4,8 @@
   "description": "Track and review your book highlights and notes",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f5f0eb",
-  "theme_color": "#2d2a26",
+  "background_color": "#d4a49a",
+  "theme_color": "#1a110f",
   "orientation": "any",
   "icons": [
     {
