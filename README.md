@@ -45,3 +45,10 @@ Open [http://localhost:3000](http://localhost:3000) to use the app.
 ## Deployment
 
 Deployed on Vercel. Environment variables (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `ANTHROPIC_API_KEY`) must be set in the Vercel project settings.
+
+## Backlog
+
+- **Auth** — simple password or username/password gate so the app isn't publicly accessible (password stored as env var in Vercel)
+- **ISBN barcode scanning** — use phone camera to scan a book's barcode instead of typing the ISBN manually
+- **Color palette** — revisit the visual design with a richer, more expressive palette
+- **Roam Research tags** — improve Roam export with proper tag structure, e.g. `[[books]]` `[[reading]]` `[[Book Title]]` on each page
