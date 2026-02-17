@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <!-- Maskable icons need safe zone (80% center circle) - keep content within 204.8px radius from center -->
-  <rect width="512" height="512" fill="#5f7a6a"/>
+  <rect width="512" height="512" fill="#2d6b50"/>
   <g transform="translate(256,256)">
     <!-- Open book -->
     <path d="M-100,-50 L-100,65 Q-50,48 0,65 L0,-50 Q-50,-68 -100,-50 Z" fill="#f5f0eb" stroke="#2d2a26" stroke-width="4"/>

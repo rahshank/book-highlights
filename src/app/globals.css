@@ -1,18 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #f5f0eb;
-  --fg: #2d2a26;
-  --muted: #8a7e74;
-  --border: #d4c9bd;
-  --accent: #5f7a6a;
-  --accent-hover: #4d6556;
-  --accent-light: #e8ede9;
-  --card: #fffdf9;
-  --highlight-bg: #f9f0e8;
-  --rose: #c4908a;
-  --rose-light: #f2e0dd;
-  --ochre: #c4913e;
+  --bg: #f3ece4;
+  --fg: #1a1816;
+  --muted: #6b5e53;
+  --border: #c4b5a5;
+  --accent: #2d6b50;
+  --accent-hover: #1e5039;
+  --accent-light: #d4e8dc;
+  --card: #ffffff;
+  --highlight-bg: #fdf3e7;
+  --rose: #b5454a;
+  --rose-light: #f5dada;
+  --ochre: #c07d1a;
 }
 
 * {
@@ -97,7 +97,7 @@ nav a:hover {
   transition: box-shadow 0.15s;
 }
 .book-card:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 }
 .book-card h3 {
   font-size: 1.1rem;
@@ -111,7 +111,7 @@ nav a:hover {
 /* Highlights */
 .highlight-card {
   background: var(--highlight-bg);
-  border-left: 3px solid var(--ochre);
+  border-left: 4px solid var(--ochre);
   padding: 1rem 1.25rem;
   margin-bottom: 1rem;
   border-radius: 0 6px 6px 0;
