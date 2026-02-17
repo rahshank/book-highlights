@@ -1,41 +1,41 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.egg-info/
-dist/
-build/
-.venv/
-venv/
-env/
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Node
-node_modules/
-.next/
-out/
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
 
-# PWA (generated at build)
-frontend/public/sw.js
-frontend/public/sw.js.map
-frontend/public/swe-worker-*.js
+# testing
+/coverage
 
-# Environment
-.env
-.env.local
-.env.production
+# next.js
+/.next/
+/out/
 
-# Database
-*.db
-*.sqlite3
+# production
+/build
 
-# Uploads
-backend/uploads/*
-!backend/uploads/.gitkeep
-
-# IDE
-.vscode/
-.idea/
-
-# OS
+# misc
 .DS_Store
-Thumbs.db
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
