@@ -55,9 +55,14 @@ export default function HomeClient({ initialBooks }: { initialBooks: BookSummary
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1>Your Library</h1>
-        <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
-          {showForm ? "Cancel" : "+ Add Book"}
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <a href="/api/export" download className="btn btn-sm" style={{ textDecoration: "none" }}>
+            Export JSON
+          </a>
+          <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
+            {showForm ? "Cancel" : "+ Add Book"}
+          </button>
+        </div>
       </div>
 
       {message && (
