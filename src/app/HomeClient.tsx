@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createBook, deleteBook, lookupISBN } from "@/lib/api";
 import type { BookSummary } from "@/lib/types";
+import ISBNScanner from "@/components/ISBNScanner";
 
 export default function HomeClient({ initialBooks }: { initialBooks: BookSummary[] }) {
   const router = useRouter();
@@ -13,6 +14,7 @@ export default function HomeClient({ initialBooks }: { initialBooks: BookSummary
   const [author, setAuthor] = useState("");
   const [isbn, setIsbn] = useState("");
   const [message, setMessage] = useState<{ type: string; text: string } | null>(null);
+  const [showScanner, setShowScanner] = useState(false);
 
   async function handleISBNLookup() {
     if (!isbn.trim()) return;
@@ -22,6 +24,19 @@ export default function HomeClient({ initialBooks }: { initialBooks: BookSummary
       setAuthor(data.author);
     } catch {
       setMessage({ type: "error", text: "ISBN not found" });
+    }
+  }
+
+  async function handleISBNScanned(scannedIsbn: string) {
+    setShowScanner(false);
+    setIsbn(scannedIsbn);
+    setMessage({ type: "success", text: `Scanned ISBN: ${scannedIsbn}` });
+    try {
+      const data = await lookupISBN(scannedIsbn);
+      setTitle(data.title);
+      setAuthor(data.author);
+    } catch {
+      setMessage({ type: "error", text: "ISBN scanned but book not found — you can enter details manually" });
     }
   }
 
@@ -88,6 +103,9 @@ export default function HomeClient({ initialBooks }: { initialBooks: BookSummary
                 onChange={(e) => setIsbn(e.target.value)}
                 placeholder="e.g. 9780141036144"
               />
+              <button type="button" className="btn" onClick={() => setShowScanner(true)}>
+                Scan
+              </button>
               <button type="button" className="btn" onClick={handleISBNLookup}>
                 Lookup
               </button>
@@ -143,6 +161,13 @@ export default function HomeClient({ initialBooks }: { initialBooks: BookSummary
             </div>
           </div>
         ))
+      )}
+
+      {showScanner && (
+        <ISBNScanner
+          onDetected={handleISBNScanned}
+          onClose={() => setShowScanner(false)}
+        />
       )}
     </>
   );
