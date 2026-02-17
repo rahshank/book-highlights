@@ -1,18 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #d4a49a;
-  --fg: #1a110f;
-  --muted: #4a3530;
-  --border: #b8867c;
-  --accent: #1a6b52;
-  --accent-hover: #13503c;
-  --accent-light: #c2ddd0;
-  --card: #faf3ef;
-  --highlight-bg: #f5e4d4;
-  --rose: #a8303a;
-  --rose-light: #efc5c5;
-  --ochre: #bf7008;
+  --bg: #1c1311;
+  --fg: #eeddd5;
+  --muted: #9a857c;
+  --border: #3a2a24;
+  --accent: #2eb882;
+  --accent-hover: #24966a;
+  --accent-light: #1a3329;
+  --card: #2a1e1a;
+  --highlight-bg: #302220;
+  --rose: #d4656e;
+  --rose-light: #3a2020;
+  --ochre: #d4960a;
 }
 
 * {
@@ -30,9 +30,8 @@ body {
 }
 
 a {
-  color: var(--fg);
+  color: var(--ochre);
   text-decoration: none;
-  font-weight: 600;
 }
 a:hover {
   text-decoration: underline;
@@ -76,15 +75,15 @@ nav .nav-inner {
 nav .logo {
   font-weight: 700;
   font-size: 1.25rem;
-  color: #f0d5c8;
+  color: var(--ochre);
   letter-spacing: 0.02em;
 }
 nav a {
-  color: #c4978c;
+  color: var(--muted);
   font-size: 0.95rem;
 }
 nav a:hover {
-  color: #f0d5c8;
+  color: var(--fg);
   text-decoration: none;
 }
 
@@ -98,7 +97,7 @@ nav a:hover {
   transition: box-shadow 0.15s;
 }
 .book-card:hover {
-  box-shadow: 0 4px 16px rgba(26, 17, 15, 0.15);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
 .book-card h3 {
   font-size: 1.1rem;
@@ -153,7 +152,7 @@ nav a:hover {
   transition: background 0.15s;
 }
 .btn:hover {
-  background: var(--bg);
+  background: var(--highlight-bg);
 }
 .btn-primary {
   background: var(--accent);
@@ -242,12 +241,12 @@ label {
 }
 .message-success {
   background: var(--accent-light);
-  color: var(--accent-hover);
+  color: var(--accent);
   border: 1px solid var(--accent);
 }
 .message-error {
   background: var(--rose-light);
-  color: #7a3b35;
+  color: var(--rose);
   border: 1px solid var(--rose);
 }
 
