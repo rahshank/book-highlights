@@ -26,3 +26,14 @@ Ruling: keep online source-photo viewing separate from offline text. Reviewed hi
 Ruling: preserve local preview separately from production. It uses an isolated local database and logs test codes without sending email; production cannot load that entry point. No remote credentials or production storage in preview.
 
 Runtime check caught Cloudflare's unsupported fetch redirect="error"; ISBN fetch now uses manual redirects and rejects non-success responses. Live local ISBN lookup returned Fantastic Mr Fox / Roald Dahl. Production email code delivery and login verified in-browser. Typecheck, lint, build and 26 tests green before review. Generated Wrangler files are excluded from lint/typecheck.
+
+Final independent review (cefbe39): five important issues identified and fixed in one pass. Regression tests were observed failing, then passing:
+- OCR correction/removal drafts now persist locally and survive background refresh and remount.
+- Open edit forms compare with their opening baseline, preserving remote changes to untouched fields.
+- Sign-out locks local writes transactionally across tabs before awaiting the server; pending changes block sign-out, and stale tabs cannot write into the cleared database.
+- Shared client/server validation rejects invalid IDs, oversized fields and records before local commit. Early invalid IDs are repaired without changing content; fixing an invalid snapshot supersedes it, while other remote changes can still arrive.
+- Sync batches respect encoded byte size as well as operation count, including multibyte text.
+
+Final: Ruling: upgrade backup source-metadata loss from minor to important because restoring one's own export should preserve provenance. Source type and valid private-photo references now survive a backup round trip; regression observed RED→GREEN. Image bytes remain in private R2, not JSON.
+
+Reviewer declined live OCR certification, physical iPhone installation, and historical Supabase completeness. Ruling: do not claim any of those as verified. Real browser checks at 390px and 1440px show no overflow; server-stopped reload and manual highlight creation succeeded, and reconnection delivered that exact passage and note to D1. A physical iPhone install remains Rahul's acceptance check. No Supabase source export was available; no migration completeness claimed. Successful live OCR remains blocked only by $0 API credit.

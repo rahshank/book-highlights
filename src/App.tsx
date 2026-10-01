@@ -54,7 +54,9 @@ function exportDownload() {
   });
 }
 export default function App() {
-  const [access, setAccess] = useState<"checking" | "yes" | "no">("checking"),
+  const [access, setAccess] = useState<"checking" | "yes" | "no" | "leaving">(
+      "checking",
+    ),
     [route, setRoute] = useState(location.hash.slice(1) || "library");
   const [books, setBooks] = useState<Book[]>([]),
     [scans, setScans] = useState<repo.LocalScan[]>([]),
@@ -166,10 +168,11 @@ export default function App() {
   useEffect(() => {
     let stopped = false;
     api("/api/auth/session")
-      .then((r) => {
+      .then(async (r) => {
+        const allowed = r.signedIn && !(await repo.isLocalLocked());
         if (!stopped) {
-          remember(r.signedIn);
-          setAccess(r.signedIn ? "yes" : "no");
+          remember(allowed);
+          setAccess(allowed ? "yes" : "no");
         }
       })
       .catch(() => {
@@ -233,26 +236,28 @@ export default function App() {
       );
       return;
     }
-    if (
-      (await repo.getSyncStatus()).pendingCount ||
-      (await repo.listScans()).length
-    ) {
-      setMessage(
-        "Sync your changes and review or discard your photos before signing out. You can export a backup from Library.",
-      );
+    try {
+      await repo.beginSignOut();
+    } catch (e) {
+      setMessage(errorText(e));
       return;
     }
+    active.current = false;
+    remember(false);
+    setAccess("leaving");
     try {
       await api("/api/auth/logout", {});
-      active.current = false;
-      remember(false);
+      await repo.finishSignOut();
       setAccess("no");
       setBooks([]);
-      await repo.resetLocalDatabase();
     } catch {
+      await repo.unlockLocalDatabase();
+      remember(true);
+      setAccess("yes");
       setMessage("Reconnect to sign out and remove this device’s copy.");
     }
   }
+
   const navigate = (next: string) => {
     location.hash = next;
     setRoute(next);
@@ -297,11 +302,14 @@ export default function App() {
         </div>
       </nav>
       <main className="container">
-        {access === "checking" ? (
-          <p role="status">Opening your library…</p>
+        {access === "checking" || access === "leaving" ? (
+          <p role="status">
+            {access === "leaving" ? "Signing out…" : "Opening your library…"}
+          </p>
         ) : access === "no" ? (
           <Login
-            onSignedIn={() => {
+            onSignedIn={async () => {
+              await repo.unlockLocalDatabase();
               remember(true);
               setAccess("yes");
             }}
@@ -372,7 +380,7 @@ export default function App() {
     </>
   );
 }
-function Login({ onSignedIn }: { onSignedIn: () => void }) {
+function Login({ onSignedIn }: { onSignedIn: () => void | Promise<void> }) {
   const [email, setEmail] = useState(""),
     [challenge, setChallenge] = useState(""),
     [code, setCode] = useState(""),
@@ -388,7 +396,7 @@ function Login({ onSignedIn }: { onSignedIn: () => void }) {
           challengeId: challenge,
           code: code.replace(/\s/g, ""),
         });
-        onSignedIn();
+        await onSignedIn();
       } else {
         const result = await api("/api/auth/request", { email });
         setChallenge(result.challengeId);
@@ -540,14 +548,18 @@ function BookForm({
   onCancel,
 }: {
   book?: Book;
-  onSave: (p: {
-    title: string;
-    author: string;
-    notes: string;
-    isbn: string;
-  }) => Promise<void>;
+  onSave: (
+    p: {
+      title: string;
+      author: string;
+      notes: string;
+      isbn: string;
+    },
+    fields: string[],
+  ) => Promise<void>;
   onCancel: () => void;
 }) {
+  const baseline = useRef(book);
   const [title, setTitle] = useState(book?.title ?? ""),
     [author, setAuthor] = useState(book?.author ?? ""),
     [notes, setNotes] = useState(book?.notes ?? ""),
@@ -575,7 +587,16 @@ function BookForm({
         e.preventDefault();
         setBusy(true);
         try {
-          await onSave({ title, author, notes, isbn });
+          const values = { title, author, notes, isbn };
+          await onSave(
+            values,
+            Object.keys(values).filter(
+              (k) =>
+                !baseline.current ||
+                values[k as keyof typeof values] !==
+                  baseline.current[k as keyof Book],
+            ),
+          );
         } catch (e) {
           setError(errorText(e));
           setBusy(false);
@@ -619,6 +640,7 @@ function BookForm({
         Book notes
         <textarea
           rows={3}
+          maxLength={100000}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
         />
@@ -635,7 +657,7 @@ function BookForm({
     </form>
   );
 }
-function BookDetail({
+export function BookDetail({
   book,
   scans,
   onChange,
@@ -660,9 +682,9 @@ function BookDetail({
       {edit ? (
         <BookForm
           book={book}
-          onSave={async (p) => {
+          onSave={async (p, fields) => {
             const patch = Object.fromEntries(
-              Object.entries(p).filter(([k, v]) => book[k as keyof Book] !== v),
+              Object.entries(p).filter(([k]) => fields.includes(k)),
             );
             await repo.updateBook(book.id, patch);
             setEdit(false);
@@ -765,14 +787,18 @@ function HighlightForm({
   onCancel,
 }: {
   highlight?: repo.LocalHighlight;
-  onSave: (p: {
-    text: string;
-    note: string;
-    pageNumber: number | null;
-    chapter: string;
-  }) => Promise<void>;
+  onSave: (
+    p: {
+      text: string;
+      note: string;
+      pageNumber: number | null;
+      chapter: string;
+    },
+    fields: string[],
+  ) => Promise<void>;
   onCancel: () => void;
 }) {
+  const baseline = useRef(highlight);
   const [text, setText] = useState(highlight?.text ?? ""),
     [note, setNote] = useState(highlight?.note ?? ""),
     [page, setPage] = useState(highlight?.pageNumber?.toString() ?? ""),
@@ -786,12 +812,21 @@ function HighlightForm({
         e.preventDefault();
         setBusy(true);
         try {
-          await onSave({
+          const values = {
             text,
             note,
             pageNumber: page ? Number(page) : null,
             chapter,
-          });
+          };
+          await onSave(
+            values,
+            Object.keys(values).filter(
+              (k) =>
+                !baseline.current ||
+                values[k as keyof typeof values] !==
+                  baseline.current[k as keyof repo.LocalHighlight],
+            ),
+          );
         } catch (e) {
           setError(errorText(e));
           setBusy(false);
@@ -845,7 +880,7 @@ function HighlightForm({
     </form>
   );
 }
-function Highlight({
+export function Highlight({
   highlight: h,
   onChange,
 }: {
@@ -858,11 +893,9 @@ function Highlight({
     return (
       <HighlightForm
         highlight={h}
-        onSave={async (p) => {
+        onSave={async (p, fields) => {
           const patch = Object.fromEntries(
-            Object.entries(p).filter(
-              ([k, v]) => h[k as keyof repo.LocalHighlight] !== v,
-            ),
+            Object.entries(p).filter(([k]) => fields.includes(k)),
           );
           await repo.updateHighlight(h.id, patch);
           setEdit(false);
@@ -921,7 +954,7 @@ function Highlight({
     </article>
   );
 }
-function ScanCard({
+export function ScanCard({
   scan,
   onChange,
 }: {
@@ -936,7 +969,20 @@ function ScanCard({
     setUrl(u);
     return () => URL.revokeObjectURL(u);
   }, [scan.image]);
-  useEffect(() => setPassages(scan.passages), [scan.passages]);
+  // New extraction changes status; background refreshes must not replace a draft.
+  const previousStatus = useRef(scan.status);
+  useEffect(() => {
+    if (previousStatus.current !== scan.status) {
+      setPassages(scan.passages);
+      previousStatus.current = scan.status;
+    }
+  }, [scan.status, scan.passages]);
+  function changePassages(next: typeof passages) {
+    setPassages(next);
+    void repo
+      .updateScan(scan.id, { passages: next })
+      .catch((e) => setError(errorText(e)));
+  }
   return (
     <article className="panel scan-card">
       <h2>
@@ -946,7 +992,7 @@ function ScanCard({
             ? "Photo needs a retry"
             : "Photo saved on this device"}
       </h2>
-      <img src={url} alt="Your photographed page" />
+      {url && <img src={url} alt="Your photographed page" />}
       {scan.status === "pending" && (
         <p>
           Extraction starts when you’re connected. Keep this app open while it
@@ -967,8 +1013,8 @@ function ScanCard({
                 rows={4}
                 value={p.text}
                 onChange={(e) =>
-                  setPassages((old) =>
-                    old.map((x, j) =>
+                  changePassages(
+                    passages.map((x, j) =>
                       j === i ? { ...x, text: e.target.value } : x,
                     ),
                   )
@@ -977,7 +1023,7 @@ function ScanCard({
               <button
                 className="text-button"
                 onClick={() =>
-                  setPassages((old) => old.filter((_, j) => j !== i))
+                  changePassages(passages.filter((_, j) => j !== i))
                 }
               >
                 Remove passage

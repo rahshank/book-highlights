@@ -1,3 +1,4 @@
+import { validateOperation } from "../shared/validation";
 import Dexie, { type EntityTable } from "dexie";
 import { parseNotebookPaste } from "../lib/notebook-parser";
 
@@ -74,6 +75,7 @@ export interface LocalOutboxOperation {
 
 export interface LocalSyncState {
   id: "default";
+  locked?: boolean;
   cursor: string;
   lastSyncedAt: string | null;
   lastAttemptedAt: string | null;
@@ -163,7 +165,7 @@ export async function addBook(input: {
     writeOrder: Date.now() * 1000 + (++localWriteSequence % 1000),
   };
 
-  await db.transaction("rw", db.books, db.outbox, async () => {
+  await db.transaction("rw", db.books, db.outbox, db.syncState, async () => {
     await db.books.add(book);
     await enqueueOutboxOperation({
       entity: "book",
@@ -209,15 +211,25 @@ export async function addHighlight(input: {
     writeOrder: Date.now() * 1000 + (++localWriteSequence % 1000),
   };
 
-  await db.transaction("rw", db.highlights, db.outbox, async () => {
-    await db.highlights.add(highlight);
-    await enqueueOutboxOperation({
-      entity: "highlight",
-      entityId: highlight.id,
-      action: "upsert",
-      payload: highlight,
-    });
-  });
+  await db.transaction(
+    "rw",
+    db.highlights,
+    db.books,
+    db.outbox,
+    db.syncState,
+    async () => {
+      await assertLocalWritable();
+      const parent = await db.books.get(input.bookId);
+      if (!parent || parent.deletedAt) throw new Error("Book not found");
+      await db.highlights.add(highlight);
+      await enqueueOutboxOperation({
+        entity: "highlight",
+        entityId: highlight.id,
+        action: "upsert",
+        payload: highlight,
+      });
+    },
+  );
   return highlight;
 }
 
@@ -353,6 +365,7 @@ export async function markOutboxOperationsSynced(
   const now = new Date().toISOString();
 
   await db.transaction("rw", db.outbox, db.syncState, async () => {
+    if (await isLocalLocked()) return;
     await Promise.all(
       operationIds.map((id) =>
         db.outbox.update(id, {
@@ -379,6 +392,7 @@ export async function markOutboxOperationsFailed(
   const now = new Date().toISOString();
 
   await db.transaction("rw", db.outbox, db.syncState, async () => {
+    if (await isLocalLocked()) return;
     await Promise.all(
       operationIds.map(async (id) => {
         const operation = await db.outbox.get(id);
@@ -470,6 +484,21 @@ async function enqueueOutboxOperation(input: {
     writeOrder: Date.now() * 1000 + (++localWriteSequence % 1000),
   };
 
+  await assertLocalWritable();
+  validateOperation(operation);
+  // A corrected record replaces old invalid snapshots without discarding its data.
+  for (const old of await db.outbox
+    .where("entityId")
+    .equals(input.entityId)
+    .toArray()) {
+    if (old.status === "synced") continue;
+    try {
+      validateOperation(old);
+    } catch {
+      await db.outbox.delete(old.id);
+      operation.changedFields = undefined;
+    }
+  }
   await db.outbox.add(operation);
   return operation;
 }
@@ -545,26 +574,35 @@ async function editRecord(
   id: string,
   patch: Record<string, unknown>,
 ) {
-  await db.transaction("rw", db.books, db.highlights, db.outbox, async () => {
-    const table = entity === "book" ? db.books : db.highlights;
-    const current = await table.get(id);
-    if (!current || current.deletedAt)
-      throw new Error("This item no longer exists");
-    const record = {
-      ...current,
-      ...patch,
-      updatedAt: new Date().toISOString(),
-      version: current.version + 1,
-    };
-    await (table as EntityTable<LocalBook | LocalHighlight, "id">).put(record);
-    await enqueueOutboxOperation({
-      entity,
-      entityId: id,
-      action: patch.deletedAt ? "delete" : "upsert",
-      payload: record,
-      changedFields: Object.keys(patch),
-    });
-  });
+  await db.transaction(
+    "rw",
+    db.books,
+    db.highlights,
+    db.outbox,
+    db.syncState,
+    async () => {
+      const table = entity === "book" ? db.books : db.highlights;
+      const current = await table.get(id);
+      if (!current || current.deletedAt)
+        throw new Error("This item no longer exists");
+      const record = {
+        ...current,
+        ...patch,
+        updatedAt: new Date().toISOString(),
+        version: current.version + 1,
+      };
+      await (table as EntityTable<LocalBook | LocalHighlight, "id">).put(
+        record,
+      );
+      await enqueueOutboxOperation({
+        entity,
+        entityId: id,
+        action: patch.deletedAt ? "delete" : "upsert",
+        payload: record,
+        changedFields: Object.keys(patch),
+      });
+    },
+  );
 }
 export async function deleteHighlight(id: string) {
   await editRecord("highlight", id, { deletedAt: new Date().toISOString() });
@@ -576,6 +614,7 @@ export async function deleteBook(id: string) {
     db.highlights,
     db.outbox,
     db.scans,
+    db.syncState,
     async () => {
       for (const h of await db.highlights.where("bookId").equals(id).toArray())
         if (!h.deletedAt) await deleteHighlight(h.id);
@@ -595,6 +634,7 @@ export async function applyRemoteEvents(
     db.outbox,
     db.syncState,
     async () => {
+      if (await isLocalLocked()) return;
       const pending = await getPendingOutboxOperations();
       for (const event of events) {
         if (
@@ -648,7 +688,10 @@ export async function addScan(bookId: string, image: Blob) {
     passages: [],
     warning: "",
   };
-  await db.scans.add(scan);
+  await db.transaction("rw", db.scans, db.syncState, async () => {
+    await assertLocalWritable();
+    await db.scans.add(scan);
+  });
   return scan;
 }
 export async function listScans(bookId?: string) {
@@ -659,10 +702,16 @@ export async function updateScan(
   id: string,
   patch: Partial<Pick<LocalScan, "status" | "passages" | "warning" | "error">>,
 ) {
-  await db.scans.update(id, patch);
+  await db.transaction("rw", db.scans, db.syncState, async () => {
+    await assertLocalWritable();
+    await db.scans.update(id, patch);
+  });
 }
 export async function removeScan(id: string) {
-  await db.scans.delete(id);
+  await db.transaction("rw", db.scans, db.syncState, async () => {
+    await assertLocalWritable();
+    await db.scans.delete(id);
+  });
 }
 export async function saveScanHighlights(
   id: string,
@@ -674,6 +723,7 @@ export async function saveScanHighlights(
     db.books,
     db.highlights,
     db.outbox,
+    db.syncState,
     async () => {
       const scan = await db.scans.get(id);
       if (!scan) throw new Error("Scan not found");
@@ -723,7 +773,9 @@ export async function importBackup(input: unknown) {
       coverUrl: text(b.coverUrl ?? b.cover_url),
       publisher: text(b.publisher),
       year: text(b.year),
-      source: "manual",
+      source: ["manual", "kindle", "ocr"].includes(text(b.source))
+        ? (text(b.source) as BookSource)
+        : "manual",
       notes: text(b.notes),
       createdAt: text(b.createdAt ?? b.created_at) || now,
       updatedAt: now,
@@ -749,8 +801,12 @@ export async function importBackup(input: unknown) {
             : null,
         location: text(h.location),
         chapter: text(h.chapter),
-        source: "manual",
-        sourceImage: "",
+        source: ["manual", "kindle", "ocr"].includes(text(h.source))
+          ? (text(h.source) as BookSource)
+          : "manual",
+        sourceImage: /^[\w-]{1,128}$/.test(text(h.sourceImage))
+          ? text(h.sourceImage)
+          : "",
         createdAt: text(h.createdAt ?? h.created_at) || now,
         updatedAt: now,
         deletedAt: null,
@@ -761,33 +817,40 @@ export async function importBackup(input: unknown) {
     return { book, highlights };
   });
   let imported = 0;
-  await db.transaction("rw", db.books, db.highlights, db.outbox, async () => {
-    for (const { book, highlights } of books) {
-      if (!(await db.books.get(book.id))) {
-        await db.books.add(book);
-        await enqueueOutboxOperation({
-          entity: "book",
-          entityId: book.id,
-          action: "upsert",
-          payload: book,
-        });
-      }
-      for (const h of highlights)
-        if (
-          !(await db.highlights.get(h.id)) &&
-          !(await hasMatchingHighlight(h))
-        ) {
-          await db.highlights.add(h);
+  await db.transaction(
+    "rw",
+    db.books,
+    db.highlights,
+    db.outbox,
+    db.syncState,
+    async () => {
+      for (const { book, highlights } of books) {
+        if (!(await db.books.get(book.id))) {
+          await db.books.add(book);
           await enqueueOutboxOperation({
-            entity: "highlight",
-            entityId: h.id,
+            entity: "book",
+            entityId: book.id,
             action: "upsert",
-            payload: h,
+            payload: book,
           });
-          imported++;
         }
-    }
-  });
+        for (const h of highlights)
+          if (
+            !(await db.highlights.get(h.id)) &&
+            !(await hasMatchingHighlight(h))
+          ) {
+            await db.highlights.add(h);
+            await enqueueOutboxOperation({
+              entity: "highlight",
+              entityId: h.id,
+              action: "upsert",
+              payload: h,
+            });
+            imported++;
+          }
+      }
+    },
+  );
   return imported;
 }
 
@@ -838,4 +901,138 @@ export async function importClippings(content: string) {
     }
   }
   return { imported, skipped };
+}
+
+async function assertLocalWritable() {
+  if ((await db.syncState.get("default"))?.locked)
+    throw new Error("Sign in again before making changes.");
+}
+export async function beginSignOut() {
+  await db.transaction(
+    "rw",
+    db.books,
+    db.highlights,
+    db.outbox,
+    db.scans,
+    db.syncState,
+    async () => {
+      if (
+        (await getPendingOutboxOperations()).length ||
+        (await db.scans.count())
+      )
+        throw new Error(
+          "Sync your changes and review or discard your photos before signing out. Export a backup from Library if needed.",
+        );
+      const state = await getOrCreateSyncState();
+      await db.syncState.put({ ...state, locked: true });
+    },
+  );
+}
+export async function finishSignOut() {
+  await db.transaction(
+    "rw",
+    db.books,
+    db.highlights,
+    db.outbox,
+    db.scans,
+    db.syncState,
+    async () => {
+      await assertSignOutLock();
+      await db.books.clear();
+      await db.highlights.clear();
+      await db.outbox.clear();
+      await db.scans.clear();
+      await db.syncState.put({
+        id: "default",
+        cursor: "",
+        lastSyncedAt: null,
+        lastAttemptedAt: null,
+        updatedAt: new Date().toISOString(),
+        locked: true,
+      });
+    },
+  );
+}
+async function assertSignOutLock() {
+  if (!(await db.syncState.get("default"))?.locked)
+    throw new Error("Sign-out was interrupted. Please retry.");
+}
+export async function unlockLocalDatabase() {
+  await db.transaction("rw", db.syncState, async () => {
+    const state = await getOrCreateSyncState();
+    await db.syncState.put({ ...state, locked: false });
+  });
+}
+
+export async function isLocalLocked() {
+  return Boolean((await db.syncState.get("default"))?.locked);
+}
+
+// Repair identifiers accepted by early local builds; preserve every word and relationship.
+export async function repairLegacyIdentifiers() {
+  const valid = (v: string) => /^[\w-]{1,128}$/.test(v);
+  const pending = await getPendingOutboxOperations();
+  if (
+    !pending.some(
+      (o) =>
+        !valid(o.id) ||
+        !valid(o.entityId) ||
+        (o.entity === "highlight" &&
+          !valid((o.payload as LocalHighlight).bookId)),
+    )
+  )
+    return;
+  await db.transaction(
+    "rw",
+    db.books,
+    db.highlights,
+    db.outbox,
+    db.scans,
+    db.syncState,
+    async () => {
+      await assertLocalWritable();
+      const ids = new Map<string, string>();
+      const normalized = (kind: string, id: string) => {
+        if (valid(id)) return id;
+        const key = kind + ":" + id;
+        if (!ids.has(key)) ids.set(key, crypto.randomUUID());
+        return ids.get(key)!;
+      };
+      for (const b of await db.books.toArray())
+        if (!valid(b.id)) {
+          await db.books.delete(b.id);
+          await db.books.put({ ...b, id: normalized("book", b.id) });
+        }
+      for (const h of await db.highlights.toArray())
+        if (!valid(h.id) || !valid(h.bookId)) {
+          await db.highlights.delete(h.id);
+          await db.highlights.put({
+            ...h,
+            id: normalized("highlight", h.id),
+            bookId: normalized("book", h.bookId),
+          });
+        }
+      for (const scan of await db.scans.toArray())
+        if (!valid(scan.bookId))
+          await db.scans.put({
+            ...scan,
+            bookId: normalized("book", scan.bookId),
+          });
+      for (const op of await db.outbox.toArray()) {
+        const payload = {
+          ...op.payload,
+          id: normalized(op.entity, op.entityId),
+        };
+        if ("bookId" in payload)
+          payload.bookId = normalized("book", payload.bookId);
+        await db.outbox.delete(op.id);
+        await db.outbox.put({
+          ...op,
+          id: valid(op.id) ? op.id : crypto.randomUUID(),
+          entityId: payload.id,
+          payload,
+        });
+      }
+    },
+  );
 }

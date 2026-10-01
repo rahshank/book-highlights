@@ -1,5 +1,7 @@
+import { validateOperation } from "../shared/validation";
 import {
   getPendingOutboxOperations,
+  repairLegacyIdentifiers,
   getSyncStatus,
   markOutboxOperationsFailed,
   markOutboxOperationsSynced,
@@ -48,6 +50,7 @@ async function run(
   stillActive: () => boolean,
 ): Promise<SyncRunResult> {
   if (!stillActive()) return { status: "idle", pushed: 0, cursor: "" };
+  await repairLegacyIdentifiers();
   const state = await getSyncStatus();
   const operations = await getPendingOutboxOperations();
   let cursor = state.cursor,
@@ -56,9 +59,34 @@ async function run(
     const check = () => {
       if (!stillActive()) throw new Error("Sync cancelled after sign-out");
     };
-    for (let i = 0; i < operations.length; i += 50) {
+    const batches: LocalOutboxOperation[][] = [];
+    let batch: LocalOutboxOperation[] = [],
+      bytes = 0,
+      invalid = false;
+    for (const operation of operations) {
+      try {
+        validateOperation(operation);
+      } catch {
+        invalid = true;
+        await markOutboxOperationsFailed(
+          [operation.id],
+          "This item cannot sync. Shorten its text, then save it again. Export a backup before changing imported data.",
+        );
+        continue;
+      }
+      const size =
+        new TextEncoder().encode(JSON.stringify(operation)).length + 1;
+      if (batch.length >= 50 || bytes + size > 1_500_000) {
+        batches.push(batch);
+        batch = [];
+        bytes = 0;
+      }
+      batch.push(operation);
+      bytes += size;
+    }
+    if (batch.length) batches.push(batch);
+    for (const batch of batches) {
       check();
-      const batch = operations.slice(i, i + 50);
       const response = await transport.push({ cursor, operations: batch });
       check();
       // Push acknowledgements must never advance the pull cursor past unseen changes.
@@ -88,6 +116,14 @@ async function run(
         more = Boolean(response.hasMore);
       }
     }
+    if (invalid)
+      return {
+        status: "failed",
+        pushed: 0,
+        cursor,
+        error:
+          "An imported item needs repair before it can sync. Edit its text and save again, or export a backup. Other updates still arrive.",
+      };
     return {
       status: pushed || transport.pull ? "synced" : "idle",
       pushed,
