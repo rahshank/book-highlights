@@ -14,9 +14,9 @@ export interface NotebookParseResult {
 
 const HIGHLIGHT_RE =
   /^(?:(?:Yellow|Blue|Pink|Orange)\s+highlight|Highlight\s*\((?:Yellow|Blue|Pink|Orange)\))\s*\|?\s*(.*)$/i;
-const NOTE_RE = /^Note\s*[|\-]\s*(.*)$/i;
+const NOTE_RE = /^Note\s*[|-]\s*(.*)$/i;
 const PAGE_RE = /page:?\s*(\d+)/i;
-const LOCATION_RE = /location:?\s*([\d\-]+)/i;
+const LOCATION_RE = /location:?\s*([\d-]+)/i;
 
 const NOISE_PHRASES = [
   "notebook export",
@@ -38,7 +38,11 @@ export function parseNotebookPaste(
     return { title: titleOverride, author: authorOverride, highlights: [] };
   }
 
-  const { title: detected, author: detectedAuthor, contentStart } = extractHeader(lines);
+  const {
+    title: detected,
+    author: detectedAuthor,
+    contentStart,
+  } = extractHeader(lines);
   const title = titleOverride || detected;
   const author = authorOverride || detectedAuthor;
   const highlights = parseEntries(lines.slice(contentStart));
@@ -142,7 +146,10 @@ function parseEntries(lines: string[]): NotebookHighlight[] {
   return highlights;
 }
 
-function extractPageLocation(meta: string): { page: number | null; location: string } {
+function extractPageLocation(meta: string): {
+  page: number | null;
+  location: string;
+} {
   const pageMatch = meta.match(PAGE_RE);
   const locMatch = meta.match(LOCATION_RE);
   return {
