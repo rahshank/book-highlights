@@ -1,6 +1,7 @@
 name = "book-highlights-local-preview"
 main = "scripts/preview-worker.ts"
 compatibility_date = "2026-07-05"
+compatibility_flags = ["global_fetch_strictly_public"]
 workers_dev = false
 [assets]
 directory = "./dist"

@@ -527,6 +527,20 @@ function Library({
 }) {
   const [query, setQuery] = useState(""),
     [adding, setAdding] = useState(false);
+  if (adding)
+    return (
+      <section className="capture-panel">
+        <h1>Add a source</h1>
+        <BookForm
+          onSave={async (p) => {
+            const b = await repo.addBook(p);
+            await onChange();
+            navigate("book/" + b.id);
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      </section>
+    );
   return (
     <section>
       <div className="library-header">
@@ -543,17 +557,6 @@ function Library({
           </button>
         </div>
       </div>
-      {adding && (
-        <BookForm
-          onSave={async (p) => {
-            const b = await repo.addBook(p);
-            await onChange();
-            setAdding(false);
-            navigate("book/" + b.id);
-          }}
-          onCancel={() => setAdding(false)}
-        />
-      )}
       {books.length > 0 && (
         <label className="library-filter">
           <span className="sr-only">Filter library</span>
@@ -597,7 +600,13 @@ function Library({
         </div>
       )}
       <p className="library-secondary">
-        <button className="text-button" onClick={() => setAdding(true)}>
+        <button
+          className="text-button"
+          onClick={() => {
+            window.scrollTo(0, 0);
+            setAdding(true);
+          }}
+        >
           Add a title without a highlight
         </button>
         <span className="book-meta"> — for notes or photographing a page.</span>
@@ -687,6 +696,7 @@ function BookForm({
       <label>
         Title
         <input
+          autoFocus
           required
           maxLength={500}
           value={title}

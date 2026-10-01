@@ -10,8 +10,8 @@ Sign in with the owner email and the eight-digit code sent to that inbox. Sessio
 
 ## What it does
 
-- Add passages from books and articles in one Library. **Add highlight** accepts a passage, book title or article link, and optional note; choose an existing source to keep its passages together. Article links from the same canonical URL reuse that source.
-- Open **Edit details** for source metadata or ISBN lookup. **Add a title without a highlight** retains the notes/photo-first workflow.
+- Add passages from books and articles in one Library. **Add highlight** accepts a passage, book title or article link, and optional note; choose an existing source to keep its passages together. Pasted article links fill title, author, publisher and publication date when available; fields stay editable. If lookup fails or you are offline, save with the link as the title and edit it later. Article links from the same canonical URL reuse that source.
+- Open **Edit details** for source metadata or ISBN lookup. **Add a title without a highlight** opens a focused source form for notes/photo-first capture; it is optional when saving a passage.
 - Import Kindle Notebook text, My Clippings.txt, or a Book Highlights JSON backup. Repeat imports skip existing highlights.
 - Photograph a marked page, review the extracted wording, and save the passages. Photos wait on the capturing device while offline.
 - Search passages and notes across the library. Export the full local text library as JSON, including unsynced changes.
@@ -25,7 +25,7 @@ The appearance follows later: cream/navy light mode, charcoal/ivory dark mode, s
 
 Cloudflare Workers serves the app and API, D1 stores synced text, and R2 stores private source photos. Resend sends owner-only sign-in codes. OpenAI handles marked-page extraction using `gpt-4.1-mini`; each scan is capped at 4,000 output tokens and 30 attempts per hour. A repeated completed scan does not incur another extraction request. No subscription or automatic credit reload was enabled by this build.
 
-**Photo extraction currently needs account funding:** the first hosted test reached OpenAI but the API balance was $0. Add credit in the OpenAI billing dashboard, then use **Retry extraction**. The reviewed-output path passes integration tests; successful live extraction still needs verification after funding.
+**Live photo extraction verified October 1:** following the $10 credit top-up, a marked-page test returned both marked sentences exactly and page 42. Review/save/reload and authenticated source-photo viewing passed. The temporary test source was soft-deleted. Physical phone-camera capture remains the user acceptance check.
 
 ## Development
 
