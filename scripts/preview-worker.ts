@@ -7,10 +7,10 @@ export default {
     if (new URL(request.url).hostname !== "127.0.0.1")
       return new Response("Local preview only", { status: 403 });
     if (
-      new URL(request.url).pathname === "/api/auth/request" &&
-      request.method === "POST"
+      new URL(request.url).pathname.startsWith("/api/auth/")
     ) {
-      const body = (await request.json()) as Record<string, unknown>;
+      if(request.method === "POST" && request.headers.get("Origin") !== new URL(request.url).origin) return new Response("Forbidden", {status:403});
+      const body = request.method === "POST" ? (await request.clone().json()) as Record<string, unknown> : {};
       return authRoute(request, env, body, async (_url, init) => {
         const text = JSON.parse(String(init?.body)).text;
         console.log("LOCAL PREVIEW ONLY:", text);

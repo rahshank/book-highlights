@@ -1,7 +1,7 @@
 name = "book-highlights-local-preview"
 main = "scripts/preview-worker.ts"
 compatibility_date = "2026-07-05"
-compatibility_flags = ["global_fetch_strictly_public"]
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 workers_dev = false
 [assets]
 directory = "./dist"
@@ -9,6 +9,8 @@ binding = "ASSETS"
 not_found_handling = "single-page-application"
 run_worker_first = true
 [vars]
+APP_ORIGIN = "http://127.0.0.1:8770"
+BETTER_AUTH_SECRET = "local-preview-only-long-secret-not-for-production-123456789"
 OWNER_EMAIL = "reader@example.test"
 RESEND_API_KEY = "local-preview-no-email-sent"
 [[d1_databases]]

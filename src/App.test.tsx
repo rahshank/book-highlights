@@ -1,6 +1,10 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+vi.mock("./authClient", () => ({ authClient: {
+  emailOtp: { sendVerificationOtp: vi.fn(async () => ({ data: { success: true } })) },
+  signIn: { emailOtp: vi.fn(async () => ({ data: {} })) },
+} }));
 import App from "./App";
 import { resetLocalDatabase, exportLibrary } from "./local/bookRepository";
 beforeEach(async () => {
@@ -105,8 +109,9 @@ it("requires sign-in on a fresh browser and accepts only a verified code", async
   expect(
     screen.queryByRole("heading", { name: "Library" }),
   ).not.toBeInTheDocument();
-  await user.type(screen.getByLabelText("Email"), "reader@example.test");
   await user.click(screen.getByRole("button", { name: "Email me a code" }));
+  await user.type(screen.getByLabelText("Email"), "reader@example.test");
+  await user.click(screen.getByRole("button", { name: "Send code" }));
   await user.type(await screen.findByLabelText("Sign-in code"), "12345678");
   await user.click(screen.getByRole("button", { name: "Sign in" }));
   await waitFor(() =>
@@ -149,8 +154,9 @@ it("keeps an incoming capture through sign-in and clears a private draft on cros
   );
   const user = userEvent.setup();
   render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Email me a code" }));
   await user.type(await screen.findByLabelText("Email"), "reader@example.test");
-  await user.click(screen.getByRole("button", { name: "Email me a code" }));
+  await user.click(screen.getByRole("button", { name: "Send code" }));
   await user.type(await screen.findByLabelText("Sign-in code"), "12345678");
   await user.click(screen.getByRole("button", { name: "Sign in" }));
   expect(
@@ -162,7 +168,7 @@ it("keeps an incoming capture through sign-in and clears a private draft on cros
       newValue: "no",
     }),
   );
-  await screen.findByLabelText("Email");
+  await screen.findByRole("button", { name: "Email me a code" });
   expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull();
 });
 it("focuses the new source form when opened from the bottom of the library", async () => {
