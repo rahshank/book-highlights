@@ -86,15 +86,15 @@ button:disabled {
 .brand {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 14px;
   margin-right: auto;
 }
 .logo {
   color: var(--accent);
   font:
-    italic 400 42px/1 Georgia,
+    italic 400 43px/0.8 Georgia,
     serif;
-  letter-spacing: -2.5px;
+  letter-spacing: -3px;
 }
 .logo:hover {
   text-decoration: none;
@@ -113,8 +113,8 @@ button:disabled {
   border-radius: 50%;
 }
 .theme-toggle svg {
-  width: 21px;
-  height: 21px;
+  width: 19px;
+  height: 19px;
 }
 .theme-toggle:hover {
   color: var(--accent);
@@ -183,6 +183,11 @@ p {
 }
 .library-header h1 {
   margin-bottom: 0;
+  font:
+    400 44px/1 Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: -2px;
 }
 .library-actions,
 .form-actions {
@@ -502,11 +507,7 @@ blockquote {
     gap: 14px;
   }
   .brand {
-    gap: 10px;
-  }
-  .logo {
-    font-size: 36px;
-    letter-spacing: -2px;
+    gap: 6px;
   }
   .nav-links {
     order: 3;
@@ -556,5 +557,17 @@ blockquote {
   }
   .login-panel h1 {
     font-size: 34px;
+  }
+}
+
+/* Match later’s wordmark at its phone breakpoints. */
+@media (max-width: 480px) {
+  .logo {
+    font-size: 39px;
+  }
+}
+@media (max-width: 360px) {
+  .logo {
+    font-size: 36px;
   }
 }
