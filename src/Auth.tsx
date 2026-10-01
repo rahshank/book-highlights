@@ -15,7 +15,7 @@ async function recovery(path: string, body?: unknown) {
   if (!response.ok) throw new Error(response.status === 403 ? freshMessage : result.message || result.error || "Please try again.");
   return result;
 }
-export function Login({ onSignedIn }: { onSignedIn: () => void | Promise<void> }) {
+export function Login({ onSignedIn, sharedAccountOrigin }: { onSignedIn: () => void | Promise<void>; sharedAccountOrigin?: string }) {
   const [mode, setMode] = useState<"main" | "email" | "code" | "recovery">("main");
   const [email, setEmail] = useState(""), [code, setCode] = useState(""), [error, setError] = useState(""), [busy, setBusy] = useState(false);
   function choose(next: typeof mode) { setMode(next); setCode(""); setError(""); }
@@ -37,6 +37,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void | Promise<void> }
       }
     } catch (e) { setError(message(e)); } finally { setBusy(false); }
   }
+  if(sharedAccountOrigin)return <section className="login-panel"><h1>Sign in</h1><p>Use your shared account for later and Highlights.</p><button className="btn btn-primary" disabled={busy} onClick={() => { setBusy(true); setError(""); sessionStorage.setItem("shared-sign-in", "pending"); void authClient.signIn.social({provider:"personal",callbackURL:location.origin+"/"+location.hash}).then(check).catch(e=>{setError(message(e));setBusy(false);}); }}>Continue to sign in</button><p className="muted">Passkey, email code or recovery code.</p>{error&&<p role="alert">{error}</p>}</section>;
   return <section className="login-panel"><h1>Sign in</h1><p>Access your saved highlights and notes.</p>
     {mode === "main" ? <div className="stack auth-options">
       <button className="btn btn-primary" disabled={busy} onClick={() => void passkey()}>{busy ? "Please wait…" : "Sign in with a passkey"}</button>
@@ -55,7 +56,11 @@ export function Login({ onSignedIn }: { onSignedIn: () => void | Promise<void> }
   </section>;
 }
 type Key = { id: string; name?: string | null };
-export function Security() {
+export function Security({sharedAccountOrigin}: {sharedAccountOrigin?:string}) {
+ if(sharedAccountOrigin)return <section className="security-panel"><h1>Security</h1><p>Your passkeys and recovery codes are shared by later and Highlights.</p><a className="btn btn-primary" href={sharedAccountOrigin+"/security"}>Manage your account</a><p className="muted">Changes apply to both apps. Saved offline copies remain on their devices until removed or signed out there.</p></section>;
+ return <LocalSecurity />;
+}
+function LocalSecurity() {
   const [keys, setKeys] = useState<Key[]>([]), [remaining, setRemaining] = useState<number | null>(null), [codes, setCodes] = useState<string[]>([]), [name, setName] = useState(""), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState("");
   async function refresh() {
     const [passkeys, status] = await Promise.all([authClient.passkey.listUserPasskeys(), recovery("status")]); check(passkeys);

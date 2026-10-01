@@ -6,6 +6,8 @@ export interface WorkerEnv {
   OWNER_EMAIL: string;
   APP_ORIGIN?: string;
   BETTER_AUTH_SECRET?: string;
+  SHARED_AUTH_ORIGIN?: string;
+  SHARED_CLIENT_SECRET?: string;
   RESEND_API_KEY?: string;
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
