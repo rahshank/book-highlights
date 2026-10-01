@@ -2,7 +2,9 @@
 
 A private library of passages and notes, available on your phone and desktop.
 
-**Open:** https://book-highlights.rahulshankar24.workers.dev
+**Primary address:** https://highlights.rahulshankar.com
+
+The original address, https://book-highlights.rahulshankar24.workers.dev, remains available. Both use the same cloud library. Sign in once at the new address to download synced text; let outstanding changes finish syncing on the old address first.
 
 Sign in with the owner email and the eight-digit code sent to that inbox. Sessions last 30 days. On iPhone, open in Safari and choose Share → Add to Home Screen.
 
@@ -15,6 +17,8 @@ Sign in with the owner email and the eight-digit code sent to that inbox. Sessio
 - Save changes locally first and sync automatically when connected. Independent field edits merge; deletes propagate across devices.
 
 After signing in once online, the installed app can reopen offline for reading, search, manual edits, imports and exports. Keep it open briefly after reconnecting to sync. Browser storage belongs to that browser/device; clearing website data removes its offline copy. Synced text returns after signing in again. Pending scans are local until reviewed, so review or discard them before signing out. Source photos are private cloud files and require a connection to view; JSON backups contain text and metadata, not image files.
+
+The appearance follows later: cream/navy light mode, charcoal/ivory dark mode, sans-serif controls and serif passages. The moon/sun beside the wordmark switches modes and remembers the choice on this browser, including offline.
 
 ## Services and costs
 
@@ -46,6 +50,15 @@ After the checks above:
 ```sh
 npx wrangler d1 migrations apply book-highlights --remote
 npx wrangler deploy
+```
+
+The custom hostname uses a Cloudflare Pages front door with a `BOOK_APP` service binding to the existing Worker. It forwards the original request, preserving same-origin checks and host-only cookies. D1, R2 and secrets remain in the Worker. Squarespace has `highlights CNAME book-highlights.pages.dev` with a 4-hour TTL; other DNS records are unchanged.
+
+Regular app releases only need the Worker deployment above. If the forwarding configuration changes, deploy it from `hosting/`:
+
+```sh
+cd hosting
+npx wrangler pages deploy --branch claude/book-highlights-tracker-Uysdc
 ```
 
 Encrypted Worker secrets: `OPENAI_API_KEY` (Responses access), `RESEND_API_KEY` (sending access). Never put credentials in `VITE_*` variables or commit local environment files. The app ignores the old bundled sync token. Owner identity is configured in `wrangler.toml`; there is no public registration.

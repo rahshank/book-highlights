@@ -39,3 +39,12 @@ Final: Ruling: upgrade backup source-metadata loss from minor to important becau
 Reviewer declined live OCR certification, physical iPhone installation, and historical Supabase completeness. Ruling: do not claim any of those as verified. Real browser checks at 390px and 1440px show no overflow; server-stopped reload and manual highlight creation succeeded, and reconnection delivered that exact passage and note to D1. A physical iPhone install remains Rahul's acceptance check. No Supabase source export was available; no migration completeness claimed. Successful live OCR remains blocked only by $0 API credit.
 
 GitHub's Linux run exposed a test timing assumption: finding passage text also matched the still-open textarea before the asynchronous save completed. The test now awaits the rendered Edit button. The former Vercel GitHub integration attempted to build the removed Next app; `vercel.json` explicitly disables those obsolete deployments, following Vercel's git.deploymentEnabled setting. Cloudflare remains the only production deployment.
+
+
+## October 1 appearance and hostname update
+
+Replaced the oversized all-serif interface with later’s palette and typography: 44px desktop / 32px phone page headings, 24px section headings, 16px body/input text, and 20–21px serif passages. Consolidated the stylesheet, removed the duplicate manifest link, and added a persistent light/dark toggle beside the wordmark. An external pre-paint script applies the saved theme under the existing CSP and is precached for offline launches.
+
+The `hosting/` Pages front door forwards requests through a service binding to the same Worker, keeping authentication, D1, R2 and secrets in one place. Cloudflare accepted `highlights.rahulshankar.com`; Squarespace email verification and its CNAME record are complete. Existing website/later records were preserved. The old Workers address stays functional so pending local changes can still sync.
+
+Local checks: typecheck, lint, all 33 tests, build; actual browser inspection of import and passage views in light/dark at 390px and desktop sizes. Dark preference survives reload and mobile content has no horizontal overflow. Live hostname/TLS and sign-in verification follow deployment.

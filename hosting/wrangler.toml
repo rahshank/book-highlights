@@ -1,0 +1,9 @@
+# External DNS (Squarespace) uses Pages for the custom hostname.
+# All requests go to the existing app Worker; no duplicated database or secrets.
+name = "book-highlights"
+pages_build_output_dir = "./pages"
+compatibility_date = "2026-07-05"
+
+[[services]]
+binding = "BOOK_APP"
+service = "book-highlights"

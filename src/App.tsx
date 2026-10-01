@@ -9,6 +9,7 @@ import * as repo from "./local/bookRepository";
 import { syncPendingChanges } from "./sync/syncRunner";
 import { createConfiguredSyncTransport } from "./sync/configuredSyncTransport";
 import "./styles.css";
+import { ThemeToggle } from "./ThemeToggle";
 type Book = repo.LocalBook & { highlights: repo.LocalHighlight[] };
 const errorText = (e: unknown) =>
   e instanceof Error ? e.message : "Something went wrong. Please retry.";
@@ -271,15 +272,17 @@ export default function App() {
     <>
       <nav className="app-nav" aria-label="Primary navigation">
         <div className="nav-inner">
-          <a
-            className="logo"
-            href="#library"
-            aria-label="Book Highlights"
-            onClick={() => navigate("library")}
-          >
-            <span>Book</span>
-            <span>Highlights</span>
-          </a>
+          <div className="brand">
+            <a
+              className="logo"
+              href="#library"
+              aria-label="Book Highlights"
+              onClick={() => navigate("library")}
+            >
+              highlights
+            </a>
+            <ThemeToggle />
+          </div>
           {access === "yes" && (
             <>
               <div className="nav-links">
@@ -1093,7 +1096,7 @@ function Search({
   );
   return (
     <section>
-      <h1>Search Highlights</h1>
+      <h1>Search highlights</h1>
       <form
         className="search-form"
         onSubmit={(e) => {
@@ -1156,9 +1159,9 @@ function Import({ onChange }: { onChange: () => Promise<void> }) {
     }
   }
   return (
-    <section>
-      <h1>Import Highlights</h1>
-      <h2>Kindle Notebook (paste from web)</h2>
+    <section className="import-page">
+      <h1>Import highlights</h1>
+      <h2>Kindle Notebook</h2>
       <p className="help-copy">
         Open a book at{" "}
         <a
@@ -1215,7 +1218,7 @@ function Import({ onChange }: { onChange: () => Promise<void> }) {
           </label>
         </div>
         <button className="btn btn-primary" disabled={busy}>
-          {busy ? "Importing…" : "Import from Paste"}
+          {busy ? "Importing…" : "Import highlights"}
         </button>
       </form>
       <section className="import-file">

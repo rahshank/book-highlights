@@ -8,13 +8,13 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       workbox: { navigateFallbackDenylist: [/^\/api\//] },
-      includeAssets: ["icons/icon-192.png", "icons/icon-512.png"],
+      includeAssets: ["icons/icon-192.png", "icons/icon-512.png", "theme.js"],
       manifest: {
         name: "Book Highlights",
-        short_name: "Book Highlights",
+        short_name: "Highlights",
         description: "Track and review your book highlights and notes",
-        theme_color: "#b45309",
-        background_color: "#fafaf9",
+        theme_color: "#fff8e8",
+        background_color: "#fff8e8",
         display: "standalone",
         start_url: "/",
         icons: [
