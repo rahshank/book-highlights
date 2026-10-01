@@ -49,7 +49,7 @@ it("creates a book, opens it, edits highlights and finds notes in search", async
   );
   await user.click(screen.getByRole("button", { name: "Save highlight" }));
   await screen.findByText("A memorable passage.");
-  await user.click(screen.getByRole("button", { name: "Edit" }));
+  await user.click(await screen.findByRole("button", { name: "Edit" }));
   await user.clear(screen.getByLabelText("Your note"));
   await user.type(screen.getByLabelText("Your note"), "A revised connection.");
   await user.click(screen.getByRole("button", { name: "Save highlight" }));
