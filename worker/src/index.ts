@@ -1,8 +1,9 @@
 import { authenticated, authRoute } from "./auth";
 import { push, pull } from "./sync";
 import { scan } from "./ocr";
+import { articleMetadata } from "./metadata";
 import { lookupIsbn } from "./isbn";
-import { json, limitedBody, type WorkerEnv } from "./types";
+import { json, limitedBody, rateLimit, type WorkerEnv } from "./types";
 export type { WorkerEnv } from "./types";
 export default { fetch: handleRequest };
 export async function handleRequest(
@@ -63,6 +64,23 @@ export async function handleRequest(
       return await authRoute(request, env, body);
     if (!(await authenticated(request, env)))
       return json({ error: "Sign in to sync your library." }, 401);
+    if (url.pathname === "/api/article-metadata" && request.method === "POST") {
+      if (!(await rateLimit(env, "article-metadata-owner", 60, 3600)))
+        return json(
+          { error: "Try again later or enter the details yourself." },
+          429,
+        );
+      try {
+        return json(await articleMetadata(String(body.url || "")));
+      } catch {
+        return json(
+          {
+            error: "Article details unavailable. You can still save the link.",
+          },
+          422,
+        );
+      }
+    }
     if (url.pathname.startsWith("/api/isbn/") && request.method === "GET")
       return await lookupIsbn(decodeURIComponent(url.pathname.slice(10)));
     if (url.pathname === "/api/sync/push" && request.method === "POST")

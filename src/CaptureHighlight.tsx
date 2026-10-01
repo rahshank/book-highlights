@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useArticleMetadata } from "./useArticleMetadata";
 import * as repo from "./local/bookRepository";
 import {
   canonicalSourceUrl,
@@ -38,6 +39,23 @@ export function CaptureHighlight({
     [busy, setBusy] = useState(false),
     [storageError, setStorageError] = useState(false);
 
+  const edited = useRef(new Set<string>());
+  const lookup = useArticleMetadata(draft.sourceId ? "" : source);
+  useEffect(() => {
+    if (!lookup.data) return;
+    const data = lookup.data;
+    setDraft((previous) => {
+      const next = { ...previous };
+      for (const key of [
+        "title",
+        "author",
+        "publisher",
+        "publishedAt",
+      ] as const)
+        if (!next[key] && !edited.current.has(key)) next[key] = data[key] || "";
+      return next;
+    });
+  }, [lookup.data]);
   useEffect(() => {
     try {
       sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
@@ -54,10 +72,12 @@ export function CaptureHighlight({
         .includes(source.toLowerCase()),
     )
     .slice(0, 6);
-  function choose(b: repo.LocalBook) {
+  function choose(b: repo.LocalBook, passageLink = b.url || "") {
     setDraft({
       ...draft,
       sourceId: b.id,
+      sourceLink: passageLink,
+      text: draft.text || textFromFragment(passageLink),
       title: b.title,
       author: b.author,
       url: b.url || "",
@@ -84,7 +104,9 @@ export function CaptureHighlight({
                 : draft.sourceId
                   ? draft.url
                   : "",
-              title: isLink ? draft.title : source,
+              title: isLink
+                ? draft.title.trim() || canonicalSourceUrl(source).slice(0, 500)
+                : source,
               pageNumber: draft.page ? Number(draft.page) : null,
             });
             try {
@@ -130,6 +152,28 @@ export function CaptureHighlight({
                 const value = e.target.value;
                 setSource(value);
                 setChoosing(true);
+                try {
+                  const url = canonicalSourceUrl(value);
+                  const existing = books.find(
+                    (b) => b.url && canonicalSourceUrl(b.url) === url,
+                  );
+                  if (existing) {
+                    choose(existing, value);
+                    return;
+                  }
+                  if (url && url === canonicalSourceUrl(source)) {
+                    setDraft({
+                      ...draft,
+                      url: value,
+                      sourceLink: value,
+                      text: draft.text || textFromFragment(value),
+                    });
+                    return;
+                  }
+                } catch {
+                  /* A book title or incomplete URL. */
+                }
+                edited.current.clear();
                 const link = /^https?:\/\//i.test(value.trim());
                 setDraft({
                   ...draft,
@@ -155,15 +199,31 @@ export function CaptureHighlight({
               ))}
             </div>
           )}
-          {draft.sourceId && <small>Adding to an existing source.</small>}
+          {draft.sourceId && (
+            <>
+              <small>Adding to an existing source.</small>
+              <p className="book-meta">
+                {draft.title}
+                {draft.author && ` · ${draft.author}`}
+              </p>
+            </>
+          )}
         </div>
+        {lookup.status && (
+          <p role="status" className="book-meta">
+            {lookup.status}
+          </p>
+        )}
         {isLink && !draft.sourceId && (
           <label>
-            Article title
+            Article title (optional)
             <input
-              required
+              placeholder="Uses the link if left blank"
               value={draft.title}
-              onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+              onChange={(e) => {
+                edited.current.add("title");
+                setDraft({ ...draft, title: e.target.value });
+              }}
             />
           </label>
         )}
@@ -174,7 +234,10 @@ export function CaptureHighlight({
             </span>
             <input
               value={draft.author}
-              onChange={(e) => setDraft({ ...draft, author: e.target.value })}
+              onChange={(e) => {
+                edited.current.add("author");
+                setDraft({ ...draft, author: e.target.value });
+              }}
             />
           </label>
         )}
@@ -209,9 +272,10 @@ export function CaptureHighlight({
                   Publisher
                   <input
                     value={draft.publisher}
-                    onChange={(e) =>
-                      setDraft({ ...draft, publisher: e.target.value })
-                    }
+                    onChange={(e) => {
+                      edited.current.add("publisher");
+                      setDraft({ ...draft, publisher: e.target.value });
+                    }}
                   />
                 </label>
                 <label>
@@ -219,9 +283,10 @@ export function CaptureHighlight({
                   <input
                     type="date"
                     value={draft.publishedAt.slice(0, 10)}
-                    onChange={(e) =>
-                      setDraft({ ...draft, publishedAt: e.target.value })
-                    }
+                    onChange={(e) => {
+                      edited.current.add("publishedAt");
+                      setDraft({ ...draft, publishedAt: e.target.value });
+                    }}
                   />
                 </label>
               </>

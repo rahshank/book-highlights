@@ -165,3 +165,13 @@ it("keeps an incoming capture through sign-in and clears a private draft on cros
   await screen.findByLabelText("Email");
   expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull();
 });
+it("focuses the new source form when opened from the bottom of the library", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Add a title without a highlight",
+    }),
+  );
+  expect(screen.getByLabelText("Title", { exact: true })).toHaveFocus();
+});
