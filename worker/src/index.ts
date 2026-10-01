@@ -35,7 +35,7 @@ export async function handleRequest(
       return json({ error: "Method not allowed" }, 405);
     if (
       request.method !== "GET" &&
-      request.headers.get("Origin") !== url.origin
+      request.headers.get("Origin") !== (env.APP_ORIGIN || url.origin)
     )
       return json({ error: "Request not allowed" }, 403);
     if (url.pathname === "/api/ocr") {
@@ -53,7 +53,7 @@ export async function handleRequest(
         new TextDecoder().decode(
           await limitedBody(
             request,
-            url.pathname.includes("/sync/") ? 2 * 1024 * 1024 : 4096,
+            url.pathname.includes("/sync/") ? 2 * 1024 * 1024 : 16384,
           ),
         ),
       );
@@ -61,7 +61,7 @@ export async function handleRequest(
         return json({ error: "Invalid request" }, 400);
     }
     if (url.pathname.startsWith("/api/auth/"))
-      return await authRoute(request, env, body);
+      return await authRoute(request.method === "POST" ? new Request(request.url, { method: request.method, headers: request.headers, body: JSON.stringify(body) }) : request, env, body);
     if (!(await authenticated(request, env)))
       return json({ error: "Sign in to sync your library." }, 401);
     if (url.pathname === "/api/article-metadata" && request.method === "POST") {

@@ -7,7 +7,7 @@ export default tseslint.config(
     ignores: [".next/**", ".wrangler/**", "dist/**", "node_modules/**"],
   },
   js.configs.recommended,
-  { files: ["public/theme.js"], languageOptions: { globals: globals.browser } },
+  { files: ["public/theme.js", "worker/src/*.mjs"], languageOptions: { globals: globals.browser } },
   ...tseslint.configs.recommended,
   {
     files: ["**/*.{ts,tsx}"],

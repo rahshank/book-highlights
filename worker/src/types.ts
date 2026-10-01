@@ -4,6 +4,8 @@ export interface WorkerEnv {
   SCAN_IMAGES: R2Bucket;
   ASSETS?: Fetcher;
   OWNER_EMAIL: string;
+  APP_ORIGIN?: string;
+  BETTER_AUTH_SECRET?: string;
   RESEND_API_KEY?: string;
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;

@@ -62,7 +62,9 @@ cd hosting
 npx wrangler pages deploy --branch claude/book-highlights-tracker-Uysdc
 ```
 
-Encrypted Worker secrets: `OPENAI_API_KEY` (Responses access), `RESEND_API_KEY` (sending access). Never put credentials in `VITE_*` variables or commit local environment files. The app ignores the old bundled sync token. Owner identity is configured in `wrangler.toml`; there is no public registration.
+Authentication now uses Better Auth with passkeys, email-code fallback and one-use recovery codes. Open **Security** to enroll a passkey and save recovery codes after a fresh sign-in. See [access and administrator recovery](docs/ACCESS_RECOVERY.md).
+
+Encrypted Worker secrets: `BETTER_AUTH_SECRET` (session signing), `OPENAI_API_KEY` (Responses access), `RESEND_API_KEY` (sending access). Never put credentials in `VITE_*` variables or commit local environment files. The app ignores the old bundled sync token. Owner identity is configured in `wrangler.toml`; there is no public registration.
 
 D1 changes and operation receipts are written by triggers in the same transaction as each record. Pull cursors are monotonic integers; push acknowledgements cannot skip unread events. Metadata uses field clocks; a deleted record cannot be resurrected by a stale device. Sessions and one-use codes are hashed in D1; mutation requests require the same origin. Private API responses and source photos are never placed in the service-worker cache.
 
@@ -72,7 +74,7 @@ Migration history preserves the old Next/Vercel/Supabase app in Git. The legacy 
 
 In later’s reader, select text and choose **Save highlight**. The draft stays on that device until you open and save it in Highlights. If offline, Highlights must have been opened on that browser previously; otherwise leave the draft in later and open it when connected. Signed-out users can sign in without losing the transfer. A closed destination tab or lost receipt leaves a retryable draft; the same capture ID prevents repeat saves.
 
-For external pages, paste the passage and its URL into Add highlight. A full text-fragment link may prefill the quotation; range-only links cannot reconstruct missing words. Titles/authors from later are filled in; other links use manual source details rather than fetching arbitrary sites.
+For external pages, paste the passage and its URL into Add highlight. A full text-fragment link may prefill the quotation; range-only links cannot reconstruct missing words. Titles/authors from later are filled in; other article links fetch editable metadata with public-network and size limits.
 
 Drafts in Highlights survive reloads in the same tab; save before closing it. Sign-out clears drafts. Saved highlights sync normally.
 

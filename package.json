@@ -11,12 +11,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@better-auth/passkey": "1.7.7",
+    "better-auth": "1.7.7",
     "dexie": "^4.4.4",
     "ipaddr.js": "^2.5.0",
     "isbnjs": "^0.2.2",
     "linkedom": "^0.18.13",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "zod": "4.3.6"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260702.1",
@@ -32,6 +35,7 @@
     "fake-indexeddb": "^6.2.5",
     "globals": "^17.7.0",
     "jsdom": "^29.1.1",
+    "miniflare": "4.20260701.0",
     "typescript": "^5",
     "typescript-eslint": "^8.62.1",
     "vite": "^8.1.3",

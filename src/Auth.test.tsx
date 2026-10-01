@@ -1,0 +1,63 @@
+import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, expect, it, vi } from 'vitest';
+const mocks = vi.hoisted(() => ({ passkey: vi.fn(), send: vi.fn(), verify: vi.fn(), list: vi.fn(), add: vi.fn(), remove: vi.fn() }));
+vi.mock('./authClient', () => ({ authClient: { signIn: { passkey: mocks.passkey, emailOtp: mocks.verify }, emailOtp: { sendVerificationOtp: mocks.send }, passkey: { listUserPasskeys: mocks.list, addPasskey: mocks.add, deletePasskey: mocks.remove } } }));
+import { Login, Security } from './Auth';
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
+it('offers email fallback after cancelled passkey and signs in with eight-digit code', async () => {
+  const user = userEvent.setup(); const signedIn = vi.fn();
+  mocks.passkey.mockResolvedValue({ error: { message: 'The operation was cancelled' } });
+  mocks.send.mockResolvedValue({ data: { success: true } }); mocks.verify.mockResolvedValue({ data: {} });
+  render(<Login onSignedIn={signedIn} />);
+  await user.click(screen.getByRole('button', { name: 'Sign in with a passkey' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(/email/i);
+  await user.click(screen.getByRole('button', { name: 'Email me a code' }));
+  await user.type(screen.getByLabelText('Email'), 'owner@example.com');
+  await user.click(screen.getByRole('button', { name: 'Send code' }));
+  await user.type(await screen.findByLabelText('Sign-in code'), '12345678');
+  await user.click(screen.getByRole('button', { name: 'Sign in' }));
+  expect(mocks.verify).toHaveBeenCalledWith({ email: 'owner@example.com', otp: '12345678' });
+  expect(signedIn).toHaveBeenCalledOnce();
+});
+it('uses recovery code through the server without browser storage', async () => {
+  const user = userEvent.setup(); const signedIn = vi.fn(); const fetcher = vi.fn().mockResolvedValue(new Response('{}')); vi.stubGlobal('fetch', fetcher);
+  const storage = vi.spyOn(Storage.prototype, 'setItem');
+  render(<Login onSignedIn={signedIn} />);
+  await user.click(screen.getByRole('button', { name: 'Use a recovery code' }));
+  await user.type(screen.getByLabelText('Recovery code'), 'secret-one-use-code');
+  await user.click(screen.getByRole('button', { name: 'Sign in' }));
+  expect(fetcher).toHaveBeenCalledWith('/api/auth/recovery/sign-in', expect.objectContaining({ body: JSON.stringify({ code: 'secret-one-use-code' }) }));
+  expect(signedIn).toHaveBeenCalledOnce(); expect(storage).not.toHaveBeenCalled(); storage.mockRestore();
+});
+it('confirms recovery replacement and explains stale sign-in without showing codes', async () => {
+  mocks.list.mockResolvedValue({ data: [] });
+  vi.stubGlobal('fetch', vi.fn(async (_path, options) => options?.method === 'POST' ? new Response('{}', { status: 403 }) : new Response('{"remaining":4}')));
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true); const user = userEvent.setup();
+  render(<Security />);
+  await screen.findByText('4 unused recovery codes');
+  await user.click(screen.getByRole('button', { name: 'Replace recovery codes' }));
+  expect(confirm).toHaveBeenCalled(); expect(await screen.findByRole('alert')).toHaveTextContent(/sign out.*sign in/i);
+  expect(screen.queryByRole('button', { name: 'Download codes' })).not.toBeInTheDocument(); confirm.mockRestore();
+});
+it('never unlocks the app for an incorrect email code', async () => {
+  mocks.send.mockResolvedValue({ data: { success: true } });
+  mocks.verify.mockResolvedValue({ error: { message: 'Invalid code. Please try again.' } });
+  const signedIn = vi.fn(); const user = userEvent.setup(); render(<Login onSignedIn={signedIn} />);
+  await user.click(screen.getByRole('button', { name: 'Email me a code' }));
+  await user.type(screen.getByLabelText('Email'), 'owner@example.com');
+  await user.click(screen.getByRole('button', { name: 'Send code' }));
+  await user.type(await screen.findByLabelText('Sign-in code'), '11111111');
+  await user.click(screen.getByRole('button', { name: 'Sign in' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Invalid code'); expect(signedIn).not.toHaveBeenCalled();
+});
+it('shows generated codes only in memory and clears them when leaving the page', async () => {
+  mocks.list.mockResolvedValue({ data: [] });
+  vi.stubGlobal('fetch', vi.fn(async (_path, options) => new Response(JSON.stringify(options?.method === 'POST' ? { codes: ['TEST-ONE-USE'] } : { remaining: 0 }))));
+  const storage = vi.spyOn(Storage.prototype, 'setItem'); const user = userEvent.setup(); const view = render(<Security />);
+  await screen.findByText('0 unused recovery codes');
+  await user.click(screen.getByRole('button', { name: 'Create recovery codes' }));
+  expect(await screen.findByText('TEST-ONE-USE')).toBeInTheDocument(); expect(storage).not.toHaveBeenCalled();
+  view.unmount(); render(<Security />); await screen.findByText('0 unused recovery codes');
+  expect(screen.queryByText('TEST-ONE-USE')).not.toBeInTheDocument(); storage.mockRestore();
+});

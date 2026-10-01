@@ -1,3 +1,4 @@
+import { Login, Security } from "./Auth";
 import { CaptureHighlight } from "./CaptureHighlight";
 import { DRAFT_KEY, readCaptureDraft } from "./shared/capture";
 import {
@@ -5,7 +6,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type FormEvent,
 } from "react";
 import * as repo from "./local/bookRepository";
 import { syncPendingChanges } from "./sync/syncRunner";
@@ -324,6 +324,7 @@ export default function App() {
                       : v[0].toUpperCase() + v.slice(1)}
                   </a>
                 ))}
+                <a className="security-link" href="#security" onClick={() => navigate("security")} aria-current={route === "security" ? "page" : undefined}>Security</a>
               </div>
               <button className="text-button" onClick={() => void logout()}>
                 Sign out
@@ -402,6 +403,7 @@ export default function App() {
               )}
             {route === "search" && <Search books={books} navigate={navigate} />}
             {route === "import" && <Import onChange={changed} />}
+            {route === "security" && <Security />}
             {route.startsWith("book/") &&
               (book ? (
                 <BookDetail
@@ -432,88 +434,6 @@ export default function App() {
         </div>
       )}
     </>
-  );
-}
-function Login({ onSignedIn }: { onSignedIn: () => void | Promise<void> }) {
-  const [email, setEmail] = useState(""),
-    [challenge, setChallenge] = useState(""),
-    [code, setCode] = useState(""),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      if (challenge) {
-        await api("/api/auth/verify", {
-          challengeId: challenge,
-          code: code.replace(/\s/g, ""),
-        });
-        await onSignedIn();
-      } else {
-        const result = await api("/api/auth/request", { email });
-        setChallenge(result.challengeId);
-      }
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <section className="login-panel">
-      <h1>Sign in</h1>
-      <p>Access your saved highlights and notes.</p>
-      <form onSubmit={submit} className="stack">
-        {!challenge ? (
-          <label>
-            Email
-            <input
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </label>
-        ) : (
-          <>
-            <p>
-              Check your email for an eight-digit code. It expires in 10
-              minutes. If needed, check Spam.
-            </p>
-            <label>
-              Sign-in code
-              <input
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                pattern="[0-9 ]{8,12}"
-                required
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-              />
-            </label>
-          </>
-        )}
-        <button className="btn btn-primary" disabled={busy}>
-          {busy ? "Please wait…" : challenge ? "Sign in" : "Email me a code"}
-        </button>
-        {error && <p role="alert">{error}</p>}
-      </form>
-      {challenge && (
-        <button
-          className="text-button"
-          onClick={() => {
-            setChallenge("");
-            setCode("");
-            setError("");
-          }}
-        >
-          Use another email or request a new code
-        </button>
-      )}
-    </section>
   );
 }
 function Library({
