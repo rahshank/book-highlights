@@ -1,3 +1,5 @@
+import { CaptureHighlight } from "./CaptureHighlight";
+import { DRAFT_KEY, readCaptureDraft } from "./shared/capture";
 import {
   useCallback,
   useEffect,
@@ -55,6 +57,17 @@ function exportDownload() {
   });
 }
 export default function App() {
+  useEffect(() => {
+    if (location.hash.startsWith("#capture=")) {
+      try {
+        sessionStorage.setItem(DRAFT_KEY, JSON.stringify(readCaptureDraft()));
+        history.replaceState(null, "", "#capture");
+        setRoute("capture");
+      } catch {
+        /* The URL still holds the draft if storage is unavailable. */
+      }
+    }
+  }, []);
   const [access, setAccess] = useState<"checking" | "yes" | "no" | "leaving">(
       "checking",
     ),
@@ -72,15 +85,19 @@ export default function App() {
     retryAfter = useRef(0),
     failures = useRef(0);
   const refresh = useCallback(async () => {
-    const [library, status, photos] = await Promise.all([
-      repo.exportLibrary(),
-      repo.getSyncStatus(),
-      repo.listScans(),
-    ]);
-    if (active.current) {
-      setBooks(library.books);
-      setPending(status.pendingCount);
-      setScans(photos);
+    try {
+      const [library, status, photos] = await Promise.all([
+        repo.exportLibrary(),
+        repo.getSyncStatus(),
+        repo.listScans(),
+      ]);
+      if (active.current) {
+        setBooks(library.books);
+        setPending(status.pendingCount);
+        setScans(photos);
+      }
+    } catch (error) {
+      if (active.current) setSyncError(errorText(error));
     }
   }, []);
   const processScans = useCallback(async () => {
@@ -122,6 +139,8 @@ export default function App() {
         }
         await refresh();
       }
+    } catch (error) {
+      if (active.current) setMessage(errorText(error));
     } finally {
       scanBusy.current = false;
     }
@@ -155,6 +174,11 @@ export default function App() {
         }
         await refresh();
         void processScans();
+      } catch (error) {
+        if (active.current) {
+          setSyncError(errorText(error));
+          retryAfter.current = Date.now() + 15000;
+        }
       } finally {
         syncBusy.current = false;
         if (active.current) setSyncing(false);
@@ -190,6 +214,7 @@ export default function App() {
     const storage = (e: StorageEvent) => {
       if (e.key === "book-highlights-unlocked" && e.newValue !== "yes") {
         active.current = false;
+        sessionStorage.removeItem(DRAFT_KEY);
         setAccess("no");
         setBooks([]);
       }
@@ -245,6 +270,7 @@ export default function App() {
     }
     active.current = false;
     remember(false);
+    sessionStorage.removeItem(DRAFT_KEY);
     setAccess("leaving");
     try {
       await api("/api/auth/logout", {});
@@ -293,7 +319,9 @@ export default function App() {
                     aria-current={route === v ? "page" : undefined}
                     onClick={() => navigate(v)}
                   >
-                    {v === "library" ? "Books" : v[0].toUpperCase() + v.slice(1)}
+                    {v === "library"
+                      ? "Library"
+                      : v[0].toUpperCase() + v.slice(1)}
                   </a>
                 ))}
               </div>
@@ -307,7 +335,7 @@ export default function App() {
       <main className="container">
         {access === "checking" || access === "leaving" ? (
           <p role="status">
-            {access === "leaving" ? "Signing out…" : "Opening your books…"}
+            {access === "leaving" ? "Signing out…" : "Opening your library…"}
           </p>
         ) : access === "no" ? (
           <Login
@@ -349,6 +377,29 @@ export default function App() {
             {route === "library" && (
               <Library books={books} onChange={changed} navigate={navigate} />
             )}
+            {route.startsWith("capture") &&
+              (!route.startsWith("capture/") ||
+                books.some((b) => b.id === route.slice(8))) && (
+                <CaptureHighlight
+                  key={route}
+                  books={books}
+                  sourceId={
+                    route.startsWith("capture/") ? route.slice(8) : undefined
+                  }
+                  onSaved={async (id) => {
+                    await changed();
+                    navigate("book/" + id);
+                    setMessage("Highlight saved.");
+                  }}
+                  onCancel={() => navigate("library")}
+                />
+              )}
+            {route.startsWith("capture/") &&
+              !books.some((b) => b.id === route.slice(8)) && (
+                <p>
+                  Opening the source… <a href="#library">Back to library</a>
+                </p>
+              )}
             {route === "search" && <Search books={books} navigate={navigate} />}
             {route === "import" && <Import onChange={changed} />}
             {route.startsWith("book/") &&
@@ -362,11 +413,11 @@ export default function App() {
                 />
               ) : (
                 <>
-                  <h1>Book unavailable</h1>
+                  <h1>Source unavailable</h1>
                   <p>
-                    This book may have been removed or may still be syncing.
+                    This source may have been removed or may still be syncing.
                   </p>
-                  <a href="#library">Back to books</a>
+                  <a href="#library">Back to library</a>
                 </>
               ))}
           </>
@@ -474,18 +525,21 @@ function Library({
   onChange: () => Promise<void>;
   navigate: (s: string) => void;
 }) {
-  const [adding, setAdding] = useState(false),
-    [query, setQuery] = useState("");
+  const [query, setQuery] = useState(""),
+    [adding, setAdding] = useState(false);
   return (
     <section>
       <div className="library-header">
-        <h1>Books</h1>
+        <h1>Library</h1>
         <div className="library-actions">
           <button className="btn" onClick={exportDownload}>
             Export JSON
           </button>
-          <button className="btn btn-primary" onClick={() => setAdding(true)}>
-            + Add Book
+          <button
+            className="btn btn-primary"
+            onClick={() => navigate("capture")}
+          >
+            + Add highlight
           </button>
         </div>
       </div>
@@ -502,10 +556,10 @@ function Library({
       )}
       {books.length > 0 && (
         <label className="library-filter">
-          <span className="sr-only">Filter books</span>
+          <span className="sr-only">Filter library</span>
           <input
             type="search"
-            placeholder="Find a book or author"
+            placeholder="Find a title or author"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -513,7 +567,7 @@ function Library({
       )}
       {books.length === 0 ? (
         <p className="empty">
-          No books yet. Add a book or import Kindle highlights to get started.
+          No highlights yet. Add a passage or import from Kindle.
         </p>
       ) : (
         <div className="book-list">
@@ -542,6 +596,12 @@ function Library({
             ))}
         </div>
       )}
+      <p className="library-secondary">
+        <button className="text-button" onClick={() => setAdding(true)}>
+          Add a title without a highlight
+        </button>
+        <span className="book-meta"> — for notes or photographing a page.</span>
+      </p>
     </section>
   );
 }
@@ -557,6 +617,9 @@ function BookForm({
       author: string;
       notes: string;
       isbn: string;
+      url: string;
+      publisher: string;
+      publishedAt: string;
     },
     fields: string[],
   ) => Promise<void>;
@@ -567,6 +630,11 @@ function BookForm({
     [author, setAuthor] = useState(book?.author ?? ""),
     [notes, setNotes] = useState(book?.notes ?? ""),
     [isbn, setIsbn] = useState(book?.isbn ?? ""),
+    [url, setUrl] = useState(book?.url ?? ""),
+    [publisher, setPublisher] = useState(book?.publisher ?? ""),
+    [publishedAt, setPublishedAt] = useState(
+      book?.publishedAt?.slice(0, 10) ?? "",
+    ),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   async function lookup() {
@@ -590,14 +658,24 @@ function BookForm({
         e.preventDefault();
         setBusy(true);
         try {
-          const values = { title, author, notes, isbn };
+          const values = {
+            title,
+            author,
+            notes,
+            isbn,
+            url,
+            publisher,
+            publishedAt,
+          };
           await onSave(
             values,
             Object.keys(values).filter(
               (k) =>
                 !baseline.current ||
                 values[k as keyof typeof values] !==
-                  baseline.current[k as keyof Book],
+                  (k === "publishedAt"
+                    ? (baseline.current.publishedAt?.slice(0, 10) ?? "")
+                    : (baseline.current[k as keyof Book] ?? "")),
             ),
           );
         } catch (e) {
@@ -623,24 +701,55 @@ function BookForm({
           onChange={(e) => setAuthor(e.target.value)}
         />
       </label>
+      {!url && (
+        <>
+          <label>
+            ISBN, if you have it
+            <input
+              maxLength={20}
+              value={isbn}
+              onChange={(e) => setIsbn(e.target.value)}
+            />
+          </label>
+          <button
+            className="text-button"
+            type="button"
+            disabled={busy || !isbn.trim()}
+            onClick={() => void lookup()}
+          >
+            Look up title and author
+          </button>
+        </>
+      )}
       <label>
-        ISBN, if you have it
+        Article link (optional)
         <input
-          maxLength={20}
-          value={isbn}
-          onChange={(e) => setIsbn(e.target.value)}
+          type="url"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
         />
       </label>
-      <button
-        className="text-button"
-        type="button"
-        disabled={busy || !isbn.trim()}
-        onClick={() => void lookup()}
-      >
-        Look up title and author
-      </button>
+      {url && (
+        <>
+          <label>
+            Publisher
+            <input
+              value={publisher}
+              onChange={(e) => setPublisher(e.target.value)}
+            />
+          </label>
+          <label>
+            Published
+            <input
+              type="date"
+              value={publishedAt}
+              onChange={(e) => setPublishedAt(e.target.value)}
+            />
+          </label>
+        </>
+      )}
       <label>
-        Book notes
+        Notes
         <textarea
           rows={3}
           maxLength={100000}
@@ -650,7 +759,7 @@ function BookForm({
       </label>
       <div className="form-actions">
         <button className="btn btn-primary" disabled={busy}>
-          {busy ? "Please wait…" : "Save Book"}
+          {busy ? "Please wait…" : "Save details"}
         </button>
         <button className="btn" type="button" onClick={onCancel}>
           Cancel
@@ -678,10 +787,18 @@ export function BookDetail({
   return (
     <section>
       <a className="back-link" href="#library">
-        ← Books
+        ← Library
       </a>
       <h1 className="book-title">{book.title}</h1>
       <p className="book-author">{book.author}</p>
+      {book.url && (
+        <p className="book-meta">
+          <a href={book.url} target="_blank" rel="noopener noreferrer">
+            {book.publisher || new URL(book.url).hostname} ↗
+          </a>
+          {book.publishedAt && ` · Published ${book.publishedAt.slice(0, 10)}`}
+        </p>
+      )}
       {edit ? (
         <BookForm
           book={book}
@@ -699,7 +816,10 @@ export function BookDetail({
         <>
           <p className="book-notes">{book.notes}</p>
           <div className="form-actions">
-            <button className="btn btn-primary" onClick={() => setAdding(true)}>
+            <button
+              className="btn btn-primary"
+              onClick={() => navigate("capture/" + book.id)}
+            >
               Add highlight
             </button>
             <label className="btn file-button">
@@ -723,13 +843,13 @@ export function BookDetail({
               />
             </label>
             <button className="text-button" onClick={() => setEdit(true)}>
-              Edit book
+              Edit details
             </button>
             <button
               className="text-button danger"
               onClick={() => setRemoving(true)}
             >
-              Delete book
+              Delete source
             </button>
           </div>
         </>
@@ -737,7 +857,7 @@ export function BookDetail({
       {removing && (
         <div className="panel" role="alert">
           <p>
-            Delete this book and its {book.highlights.length} highlights from
+            Delete this source and its {book.highlights.length} highlights from
             your library and synced devices?
           </p>
           <button
@@ -748,10 +868,10 @@ export function BookDetail({
               navigate("library");
             }}
           >
-            Delete book and highlights
+            Delete source and highlights
           </button>{" "}
           <button className="btn" onClick={() => setRemoving(false)}>
-            Keep book
+            Keep source
           </button>
         </div>
       )}
@@ -910,6 +1030,11 @@ export function Highlight({
   return (
     <article className="highlight-card">
       <blockquote>{h.text}</blockquote>
+      {h.sourceLink && (
+        <a href={h.sourceLink} target="_blank" rel="noopener noreferrer">
+          Open passage ↗
+        </a>
+      )}
       {h.note && <p className="highlight-note">{h.note}</p>}
       <p className="book-meta">
         {[
@@ -1124,6 +1249,15 @@ function Search({
             results.map(({ b, h }) => (
               <article className="highlight-card" key={h.id}>
                 <blockquote>{h.text}</blockquote>
+                {h.sourceLink && (
+                  <a
+                    href={h.sourceLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open passage ↗
+                  </a>
+                )}
                 {h.note && <p className="highlight-note">{h.note}</p>}
                 <a
                   href={"#book/" + b.id}

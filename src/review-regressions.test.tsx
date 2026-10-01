@@ -71,7 +71,12 @@ it("saves only fields edited in a form even when remote props change", async () 
     note: "My note",
   });
   view.unmount();
-  const initial = { ...book, highlights: [] };
+  const initial = {
+    ...book,
+    url: undefined,
+    publishedAt: "2026-09-26T12:00:00Z",
+    highlights: [],
+  };
   const v = render(
     <BookDetail
       book={initial}
@@ -80,9 +85,13 @@ it("saves only fields edited in a form even when remote props change", async () 
       navigate={vi.fn()}
     />,
   );
-  await user.click(screen.getByRole("button", { name: "Edit book" }));
-  await user.type(screen.getByLabelText("Book notes"), "My book note");
-  await repo.updateBook(book.id, { author: "Remote author" });
+  await user.click(screen.getByRole("button", { name: "Edit details" }));
+  await user.type(screen.getByLabelText("Notes"), "My book note");
+  await repo.updateBook(book.id, {
+    author: "Remote author",
+    url: "https://example.com/new",
+    publishedAt: "2026-09-27T12:00:00Z",
+  });
   v.rerender(
     <BookDetail
       book={{ ...initial, author: "Remote author" }}
@@ -91,10 +100,12 @@ it("saves only fields edited in a form even when remote props change", async () 
       navigate={vi.fn()}
     />,
   );
-  await user.click(screen.getByRole("button", { name: "Save Book" }));
+  await user.click(screen.getByRole("button", { name: "Save details" }));
   expect((await repo.exportLibrary()).books[0]).toMatchObject({
     author: "Remote author",
     notes: "My book note",
+    url: "https://example.com/new",
+    publishedAt: "2026-09-27T12:00:00Z",
   });
 });
 it("locks local writes before delayed sign-out and never clears pending changes", async () => {

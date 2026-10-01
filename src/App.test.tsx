@@ -6,6 +6,7 @@ import { resetLocalDatabase, exportLibrary } from "./local/bookRepository";
 beforeEach(async () => {
   await resetLocalDatabase();
   localStorage.clear();
+  sessionStorage.clear();
   vi.stubGlobal(
     "fetch",
     vi.fn(
@@ -32,21 +33,18 @@ afterEach(() => {
 it("creates a book, opens it, edits highlights and finds notes in search", async () => {
   const user = userEvent.setup();
   render(<App />);
-  await screen.findByRole("heading", { name: "Books" });
-  await user.click(screen.getByRole("button", { name: "+ Add Book" }));
-  await user.type(screen.getByLabelText("Title"), "Test book");
-  await user.type(screen.getByLabelText("Author"), "An author");
-  await user.click(screen.getByRole("button", { name: "Save Book" }));
-  await screen.findByRole("heading", { name: "Test book" });
-  await user.click(screen.getByRole("button", { name: "Add highlight" }));
+  await screen.findByRole("heading", { name: "Library" });
+  await user.click(screen.getByRole("button", { name: "+ Add highlight" }));
   await user.type(
-    screen.getByLabelText("Highlighted passage"),
+    screen.getByLabelText("Highlight", { exact: true }),
     "A memorable passage.",
   );
   await user.type(
-    screen.getByLabelText("Your note"),
-    "An important connection.",
+    screen.getByLabelText("Source", { exact: true }),
+    "Test book",
   );
+  await user.type(screen.getByLabelText(/Author/), "An author");
+  await user.type(screen.getByLabelText(/Note/), "An important connection.");
   await user.click(screen.getByRole("button", { name: "Save highlight" }));
   await screen.findByText("A memorable passage.");
   await user.click(await screen.findByRole("button", { name: "Edit" }));
@@ -75,7 +73,7 @@ it("imports notebook text and makes the imported book readable", async () => {
   );
   await user.click(screen.getByRole("button", { name: "Import highlights" }));
   await screen.findByText("Imported 1 highlights. Skipped 0 duplicates.");
-  await user.click(screen.getByRole("link", { name: "Books" }));
+  await user.click(screen.getByRole("link", { name: "Library" }));
   await user.click(
     await screen.findByRole("link", { name: "The Great Transformation" }),
   );
@@ -105,7 +103,7 @@ it("requires sign-in on a fresh browser and accepts only a verified code", async
   render(<App />);
   await screen.findByRole("button", { name: "Email me a code" });
   expect(
-    screen.queryByRole("heading", { name: "Books" }),
+    screen.queryByRole("heading", { name: "Library" }),
   ).not.toBeInTheDocument();
   await user.type(screen.getByLabelText("Email"), "reader@example.test");
   await user.click(screen.getByRole("button", { name: "Email me a code" }));
@@ -113,7 +111,57 @@ it("requires sign-in on a fresh browser and accepts only a verified code", async
   await user.click(screen.getByRole("button", { name: "Sign in" }));
   await waitFor(() =>
     expect(
-      screen.getByRole("heading", { name: "Books" }),
+      screen.getByRole("heading", { name: "Library" }),
     ).toBeInTheDocument(),
   );
+});
+it("keeps an incoming capture through sign-in and clears a private draft on cross-tab sign-out", async () => {
+  const { blankDraft, DRAFT_KEY } = await import("./shared/capture");
+  history.replaceState(
+    null,
+    "",
+    "#capture=" +
+      encodeURIComponent(
+        JSON.stringify({
+          ...blankDraft(),
+          title: "Article",
+          url: "https://example.com/a",
+          text: "Transferred passage",
+        }),
+      ),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async (path: string) =>
+        new Response(
+          JSON.stringify(
+            path.includes("/auth/session")
+              ? { signedIn: false }
+              : path.includes("/auth/request")
+                ? { challengeId: "test" }
+                : path.includes("/sync/pull")
+                  ? { cursor: "0", events: [] }
+                  : { ok: true },
+          ),
+        ),
+    ),
+  );
+  const user = userEvent.setup();
+  render(<App />);
+  await user.type(await screen.findByLabelText("Email"), "reader@example.test");
+  await user.click(screen.getByRole("button", { name: "Email me a code" }));
+  await user.type(await screen.findByLabelText("Sign-in code"), "12345678");
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
+  expect(
+    await screen.findByLabelText("Highlight", { exact: true }),
+  ).toHaveValue("Transferred passage");
+  window.dispatchEvent(
+    new StorageEvent("storage", {
+      key: "book-highlights-unlocked",
+      newValue: "no",
+    }),
+  );
+  await screen.findByLabelText("Email");
+  expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull();
 });

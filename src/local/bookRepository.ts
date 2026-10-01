@@ -1,3 +1,4 @@
+import { canonicalSourceUrl, safeSourceLink } from "../shared/capture";
 import { validateOperation } from "../shared/validation";
 import Dexie, { type EntityTable } from "dexie";
 import { parseNotebookPaste } from "../lib/notebook-parser";
@@ -17,6 +18,8 @@ export interface LocalBook {
   year: string;
   source: BookSource;
   notes: string;
+  url?: string;
+  publishedAt?: string;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -34,6 +37,7 @@ export interface LocalHighlight {
   chapter: string;
   source: BookSource;
   sourceImage: string;
+  sourceLink?: string;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -145,6 +149,8 @@ export async function addBook(input: {
   year?: string;
   source?: BookSource;
   notes?: string;
+  url?: string;
+  publishedAt?: string;
 }): Promise<LocalBook> {
   if (!input.title.trim()) throw new Error("Book title is required");
   const now = new Date().toISOString();
@@ -158,6 +164,8 @@ export async function addBook(input: {
     year: input.year?.trim() ?? "",
     source: input.source ?? "manual",
     notes: input.notes?.trim() ?? "",
+    url: canonicalSourceUrl(input.url ?? ""),
+    publishedAt: input.publishedAt ?? "",
     createdAt: now,
     updatedAt: now,
     deletedAt: null,
@@ -186,6 +194,8 @@ export async function addHighlight(input: {
   chapter?: string;
   source?: BookSource;
   sourceImage?: string;
+  sourceLink?: string;
+  captureId?: string;
 }): Promise<LocalHighlight> {
   if (!input.text.trim()) throw new Error("Highlight text is required");
   const book = await db.books.get(input.bookId);
@@ -195,7 +205,7 @@ export async function addHighlight(input: {
 
   const now = new Date().toISOString();
   const highlight: LocalHighlight = {
-    id: crypto.randomUUID(),
+    id: input.captureId || crypto.randomUUID(),
     bookId: input.bookId,
     text: input.text.trim(),
     note: input.note?.trim() ?? "",
@@ -204,6 +214,7 @@ export async function addHighlight(input: {
     chapter: input.chapter?.trim() ?? "",
     source: input.source ?? "manual",
     sourceImage: input.sourceImage?.trim() ?? "",
+    sourceLink: safeSourceLink(input.sourceLink ?? ""),
     createdAt: now,
     updatedAt: now,
     deletedAt: null,
@@ -551,12 +562,21 @@ export async function updateBook(
   patch: Partial<
     Pick<
       LocalBook,
-      "title" | "author" | "notes" | "isbn" | "publisher" | "year"
+      | "title"
+      | "author"
+      | "notes"
+      | "isbn"
+      | "publisher"
+      | "year"
+      | "url"
+      | "publishedAt"
     >
   >,
 ) {
   if (patch.title !== undefined && !patch.title.trim())
     throw new Error("Book title is required");
+  if (patch.url !== undefined)
+    patch = { ...patch, url: canonicalSourceUrl(patch.url) };
   return editRecord("book", id, patch);
 }
 export async function updateHighlight(
@@ -646,7 +666,8 @@ export async function applyRemoteEvents(
           event.entity === "book" ? db.books : db.highlights
         ) as EntityTable<LocalBook | LocalHighlight, "id">;
         const remote = { ...event.payload } as unknown as
-          LocalBook | LocalHighlight;
+          | LocalBook
+          | LocalHighlight;
         // Pending edits overlay only touched fields. Unrelated changes still arrive.
         if (!remote.deletedAt)
           for (const op of pending.filter(
@@ -777,6 +798,8 @@ export async function importBackup(input: unknown) {
         ? (text(b.source) as BookSource)
         : "manual",
       notes: text(b.notes),
+      url: canonicalSourceUrl(text(b.url)),
+      publishedAt: text(b.publishedAt),
       createdAt: text(b.createdAt ?? b.created_at) || now,
       updatedAt: now,
       deletedAt: null,
@@ -807,6 +830,7 @@ export async function importBackup(input: unknown) {
         sourceImage: /^[\w-]{1,128}$/.test(text(h.sourceImage))
           ? text(h.sourceImage)
           : "",
+        sourceLink: safeSourceLink(text(h.sourceLink)),
         createdAt: text(h.createdAt ?? h.created_at) || now,
         updatedAt: now,
         deletedAt: null,
@@ -1033,6 +1057,62 @@ export async function repairLegacyIdentifiers() {
           payload,
         });
       }
+    },
+  );
+}
+
+/** One transaction prevents orphaned sources and serializes repeated URL captures. */
+export async function captureHighlight(input: {
+  sourceId?: string;
+  title: string;
+  author?: string;
+  url?: string;
+  publisher?: string;
+  publishedAt?: string;
+  text: string;
+  note?: string;
+  sourceLink?: string;
+  pageNumber?: number | null;
+  captureId?: string;
+}): Promise<LocalHighlight> {
+  const url = canonicalSourceUrl(input.url ?? "");
+  return db.transaction(
+    "rw",
+    db.books,
+    db.highlights,
+    db.outbox,
+    db.syncState,
+    async () => {
+      await assertLocalWritable();
+      if (input.captureId) {
+        const previous = await db.highlights.get(input.captureId);
+        if (previous && !previous.deletedAt) return previous;
+      }
+      let book = input.sourceId
+        ? await db.books.get(input.sourceId)
+        : undefined;
+      if (input.sourceId && (!book || book.deletedAt))
+        throw new Error("This source was removed. Choose another source.");
+      if (!book && url)
+        book = (await db.books.toArray()).find(
+          (b) => !b.deletedAt && b.url && canonicalSourceUrl(b.url) === url,
+        );
+      if (!book)
+        book = await addBook({
+          title: input.title,
+          author: input.author,
+          url,
+          publisher: input.publisher,
+          publishedAt: input.publishedAt,
+        });
+      return addHighlight({
+        bookId: book.id,
+        text: input.text,
+        note: input.note,
+        pageNumber: input.pageNumber,
+        sourceLink: input.sourceLink,
+        captureId: input.captureId,
+      });
     },
   );
 }
