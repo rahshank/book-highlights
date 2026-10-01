@@ -8,11 +8,13 @@ import type {
 
 export interface HttpSyncTransportConfig {
   apiBaseUrl: string;
-  authToken: string;
+  authToken?: string;
   fetchImpl?: typeof fetch;
 }
 
-export function createHttpSyncTransport(config: HttpSyncTransportConfig): SyncTransport {
+export function createHttpSyncTransport(
+  config: HttpSyncTransportConfig,
+): SyncTransport {
   const baseUrl = config.apiBaseUrl.replace(/\/+$/, "");
   const fetchImpl = config.fetchImpl ?? fetch;
 
@@ -20,8 +22,12 @@ export function createHttpSyncTransport(config: HttpSyncTransportConfig): SyncTr
     async push(request: SyncPushRequest): Promise<SyncPushResponse> {
       const response = await fetchImpl(`${baseUrl}/api/sync/push`, {
         method: "POST",
+        credentials: "same-origin",
+        signal: AbortSignal.timeout(30000),
         headers: {
-          authorization: `Bearer ${config.authToken}`,
+          ...(config.authToken
+            ? { authorization: `Bearer ${config.authToken}` }
+            : {}),
           "content-type": "application/json",
         },
         body: JSON.stringify(request),
@@ -44,8 +50,12 @@ export function createHttpSyncTransport(config: HttpSyncTransportConfig): SyncTr
         `${baseUrl}/api/sync/pull?since=${encodeURIComponent(request.cursor)}`,
         {
           method: "GET",
+          credentials: "same-origin",
+          signal: AbortSignal.timeout(30000),
           headers: {
-            authorization: `Bearer ${config.authToken}`,
+            ...(config.authToken
+              ? { authorization: `Bearer ${config.authToken}` }
+              : {}),
           },
         },
       );
@@ -55,19 +65,28 @@ export function createHttpSyncTransport(config: HttpSyncTransportConfig): SyncTr
         throw new Error(extractErrorMessage(body, response.statusText));
       }
 
-      if (!body || typeof body.cursor !== "string" || !Array.isArray(body.events)) {
+      if (
+        !body ||
+        typeof body.cursor !== "string" ||
+        !Array.isArray(body.events)
+      ) {
         throw new Error("Sync pull response was invalid");
       }
 
       return {
         cursor: body.cursor,
         events: body.events as Array<Record<string, unknown>>,
+        ...(body.hasMore !== undefined
+          ? { hasMore: Boolean(body.hasMore) }
+          : {}),
       };
     },
   };
 }
 
-async function readJson(response: Response): Promise<Record<string, unknown> | null> {
+async function readJson(
+  response: Response,
+): Promise<Record<string, unknown> | null> {
   try {
     return (await response.json()) as Record<string, unknown>;
   } catch {
@@ -75,7 +94,10 @@ async function readJson(response: Response): Promise<Record<string, unknown> | n
   }
 }
 
-function extractErrorMessage(body: Record<string, unknown> | null, fallback: string): string {
+function extractErrorMessage(
+  body: Record<string, unknown> | null,
+  fallback: string,
+): string {
   if (body && typeof body.error === "string" && body.error.trim()) {
     return body.error;
   }

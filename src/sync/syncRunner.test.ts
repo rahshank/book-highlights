@@ -85,3 +85,59 @@ describe("sync runner", () => {
     });
   });
 });
+
+it("pulls remote records even with no pending writes and never skips them after a push", async () => {
+  await resetLocalDatabase();
+  const pull = vi
+    .fn()
+    .mockResolvedValue({
+      cursor: "2",
+      events: [
+        {
+          entity: "book",
+          payload: {
+            id: "remote",
+            title: "Remote",
+            author: "",
+            deletedAt: null,
+            createdAt: "2026-09-30",
+            updatedAt: "2026-09-30",
+            version: 1,
+            writeOrder: 1,
+          },
+        },
+      ],
+    });
+  await syncPendingChanges({ push: vi.fn(), pull });
+  expect(pull).toHaveBeenCalledWith({ cursor: "" });
+  const { exportLibrary } = await import("../local/bookRepository");
+  expect((await exportLibrary()).books[0].title).toBe("Remote");
+  await addBook({ title: "Local" });
+  pull.mockResolvedValue({ cursor: "3", events: [] });
+  await syncPendingChanges({
+    push: vi.fn().mockResolvedValue({ cursor: "99" }),
+    pull,
+  });
+  expect(pull).toHaveBeenLastCalledWith({ cursor: "2" });
+});
+
+it("does not restore private records after sign-out cancels an in-flight pull", async () => {
+  await resetLocalDatabase();
+  let active = true;
+  const pull = vi.fn(async () => {
+    active = false;
+    await resetLocalDatabase();
+    return {
+      cursor: "1",
+      events: [
+        {
+          entity: "book",
+          payload: { id: "private", title: "Private", deletedAt: null },
+        },
+      ],
+    };
+  });
+  await syncPendingChanges({ push: vi.fn(), pull }, () => active);
+  const { exportLibrary } = await import("../local/bookRepository");
+  expect((await exportLibrary()).books).toEqual([]);
+});

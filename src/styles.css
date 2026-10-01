@@ -383,3 +383,255 @@ textarea::placeholder {
     padding-inline: 0.85rem;
   }
 }
+/* Complete reading and capture flows, preserving the original editorial palette. */
+[hidden] {
+  display: none !important;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+button,
+input,
+textarea {
+  font: inherit;
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.stack {
+  display: grid;
+  gap: 1rem;
+}
+.stack label {
+  display: grid;
+  gap: 0.35rem;
+}
+.stack .btn {
+  justify-self: start;
+}
+.panel {
+  border: 1px solid var(--border);
+  padding: 1.25rem;
+  border-radius: 6px;
+  background: var(--card);
+  margin: 1.5rem 0;
+}
+.text-button {
+  background: transparent;
+  border: 0;
+  color: var(--accent);
+  padding: 0.4rem 0;
+  min-height: 44px;
+  cursor: pointer;
+  text-align: left;
+}
+.danger {
+  color: #a12e20;
+}
+.btn.danger {
+  border-color: #a12e20;
+}
+textarea {
+  min-height: 0;
+}
+.book-title {
+  font-size: clamp(2.3rem, 6vw, 4rem);
+  overflow-wrap: anywhere;
+}
+.book-author {
+  font-size: 1.35rem;
+  color: var(--muted);
+}
+.book-notes,
+.highlight-note {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.back-link {
+  display: inline-block;
+  margin-bottom: 1rem;
+}
+.highlight-list {
+  display: grid;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+blockquote {
+  margin: 0 0 1rem;
+  font-size: 1.3rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.item-actions {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.item-actions a {
+  font-size: 0.95rem;
+}
+.book-card h2 a {
+  color: var(--fg);
+}
+.book-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.book-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.library-header h1 {
+  max-width: none;
+}
+.library-header {
+  align-items: center;
+}
+.library-actions {
+  padding-top: 0;
+  flex-shrink: 0;
+}
+.library-filter {
+  display: block;
+  margin-top: 1.5rem;
+}
+.btn {
+  min-height: 44px;
+}
+.file-button {
+  position: relative;
+  overflow: hidden;
+}
+.file-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.file-button:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.import-file {
+  margin-top: 3rem;
+  border-top: 1px solid var(--border);
+  padding-top: 2rem;
+}
+.login-panel {
+  max-width: 480px;
+  margin: 2rem auto;
+}
+.login-panel h1 {
+  font-size: 3rem;
+}
+.sync-notice {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding: 0 0 1rem;
+  margin-bottom: 2rem;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+.scan-card img {
+  max-height: 220px;
+  max-width: 100%;
+  object-fit: contain;
+  display: block;
+  margin-bottom: 1rem;
+}
+.scan-card label {
+  display: grid;
+  margin: 1rem 0;
+}
+.scan-card h2 {
+  font-size: 1.7rem;
+}
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  background: var(--fg);
+  color: var(--bg);
+  padding: 0.75rem 1rem;
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  z-index: 20;
+  border-radius: 6px;
+}
+.toast button {
+  background: none;
+  border: 0;
+  color: inherit;
+  font-size: 1.6rem;
+  min-width: 44px;
+  min-height: 44px;
+}
+@media (max-width: 600px) {
+  .library-header {
+    display: block;
+  }
+  .library-actions {
+    margin: 1rem 0;
+  }
+  .book-list {
+    grid-template-columns: 1fr;
+  }
+  .import-fields {
+    grid-template-columns: 1fr;
+    margin-top: 0;
+  }
+  .container {
+    padding: 2rem 1.25rem;
+  }
+  .nav-inner {
+    gap: 0.75rem;
+  }
+  .nav-links {
+    gap: 1rem;
+  }
+  .logo {
+    font-size: 1.15rem;
+  }
+  .nav-inner > .text-button {
+    font-size: 0.9rem;
+    margin-left: auto;
+  }
+  .library-header h1 {
+    font-size: 3rem;
+  }
+  .sync-notice {
+    flex-wrap: wrap;
+  }
+  .form-actions {
+    gap: 0.75rem;
+  }
+  .btn {
+    min-height: 48px;
+  }
+  .help-copy {
+    font-size: 1.1rem;
+  }
+  .login-panel h1 {
+    font-size: 2.6rem;
+  }
+}

@@ -1,6 +1,18 @@
 name = "book-highlights"
 main = "worker/src/index.ts"
 compatibility_date = "2026-07-05"
+workers_dev = true
+preview_urls = false
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = true
+
+[vars]
+OWNER_EMAIL = "rahulshankar24@gmail.com"
+OPENAI_MODEL = "gpt-4.1-mini"
 
 [[d1_databases]]
 binding = "DB"

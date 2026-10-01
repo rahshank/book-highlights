@@ -1,86 +1,267 @@
-import { type FormEvent, useEffect, useState } from "react";
 import {
-  addBook,
-  exportLibrary,
-  getSyncStatus,
-  importNotebookPaste,
-  searchHighlights,
-  type HighlightSearchResult,
-  type LocalBook,
-  type LocalHighlight,
-  type SyncStatus,
-} from "./local/bookRepository";
-import { createConfiguredSyncTransport } from "./sync/configuredSyncTransport";
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import * as repo from "./local/bookRepository";
 import { syncPendingChanges } from "./sync/syncRunner";
+import { createConfiguredSyncTransport } from "./sync/configuredSyncTransport";
 import "./styles.css";
-
-type View = "library" | "search" | "import";
-type ExportedBook = LocalBook & { highlights: LocalHighlight[] };
-
+type Book = repo.LocalBook & { highlights: repo.LocalHighlight[] };
+const errorText = (e: unknown) =>
+  e instanceof Error ? e.message : "Something went wrong. Please retry.";
+async function api(path: string, body?: unknown) {
+  const response = await fetch(path, {
+    method: body === undefined ? "GET" : "POST",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: body === undefined ? {} : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(30000),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Please try again.");
+  return data;
+}
+function remember(value: boolean) {
+  try {
+    localStorage.setItem("book-highlights-unlocked", value ? "yes" : "no");
+  } catch {
+    /* Online use still works. */
+  }
+}
+function remembered() {
+  try {
+    return localStorage.getItem("book-highlights-unlocked") === "yes";
+  } catch {
+    return false;
+  }
+}
+function exportDownload() {
+  void repo.exportLibrary().then((library) => {
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(library, null, 2)], {
+        type: "application/json",
+      }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `book-highlights-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+}
 export default function App() {
-  const [view, setView] = useState<View>(getInitialView);
-  const [libraryRefresh, setLibraryRefresh] = useState(0);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
-  const [syncMessage, setSyncMessage] = useState("");
-  const [isSyncing, setIsSyncing] = useState(false);
-
+  const [access, setAccess] = useState<"checking" | "yes" | "no">("checking"),
+    [route, setRoute] = useState(location.hash.slice(1) || "library");
+  const [books, setBooks] = useState<Book[]>([]),
+    [scans, setScans] = useState<repo.LocalScan[]>([]),
+    [pending, setPending] = useState(0),
+    [syncError, setSyncError] = useState(""),
+    [syncing, setSyncing] = useState(false),
+    [online, setOnline] = useState(navigator.onLine);
+  const [message, setMessage] = useState("");
+  const active = useRef(false),
+    syncBusy = useRef(false),
+    scanBusy = useRef(false),
+    retryAfter = useRef(0),
+    failures = useRef(0);
+  const refresh = useCallback(async () => {
+    const [library, status, photos] = await Promise.all([
+      repo.exportLibrary(),
+      repo.getSyncStatus(),
+      repo.listScans(),
+    ]);
+    if (active.current) {
+      setBooks(library.books);
+      setPending(status.pendingCount);
+      setScans(photos);
+    }
+  }, []);
+  const processScans = useCallback(async () => {
+    if (scanBusy.current || !active.current || !navigator.onLine) return;
+    scanBusy.current = true;
+    try {
+      for (const photo of (await repo.listScans()).filter(
+        (p) => p.status === "pending",
+      )) {
+        if (!active.current) break;
+        try {
+          const response = await fetch("/api/ocr", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+              "Content-Type": photo.image.type,
+              "X-Scan-Id": photo.id,
+              "X-Book-Id": photo.bookId,
+            },
+            body: photo.image,
+            signal: AbortSignal.timeout(75000),
+          });
+          const result = await response.json();
+          if (!response.ok)
+            throw new Error(result.error || "Photo extraction failed.");
+          if (active.current)
+            await repo.updateScan(photo.id, {
+              status: "review",
+              passages: result.passages,
+              warning: result.warning,
+              error: "",
+            });
+        } catch (e) {
+          if (active.current)
+            await repo.updateScan(photo.id, {
+              status: "failed",
+              error: errorText(e),
+            });
+        }
+        await refresh();
+      }
+    } finally {
+      scanBusy.current = false;
+    }
+  }, [refresh]);
+  const sync = useCallback(
+    async (manual = false) => {
+      if (syncBusy.current || !active.current) return;
+      if (!navigator.onLine) {
+        setOnline(false);
+        return;
+      }
+      if (!manual && Date.now() < retryAfter.current) return;
+      syncBusy.current = true;
+      setSyncing(true);
+      try {
+        const result = await syncPendingChanges(
+          createConfiguredSyncTransport(),
+          () => active.current && remembered(),
+        );
+        if (!active.current) return;
+        if (result.status === "failed") {
+          failures.current++;
+          retryAfter.current =
+            Date.now() + Math.min(300000, 15000 * 2 ** failures.current);
+          setSyncError(result.error);
+        } else {
+          failures.current = 0;
+          retryAfter.current = 0;
+          setSyncError("");
+          setOnline(true);
+        }
+        await refresh();
+        void processScans();
+      } finally {
+        syncBusy.current = false;
+        if (active.current) setSyncing(false);
+      }
+    },
+    [refresh, processScans],
+  );
+  const changed = useCallback(async () => {
+    await refresh();
+    void sync(true);
+  }, [refresh, sync]);
   useEffect(() => {
-    let cancelled = false;
-
-    getSyncStatus()
-      .then((nextStatus) => {
-        if (!cancelled) setSyncStatus(nextStatus);
+    let stopped = false;
+    api("/api/auth/session")
+      .then((r) => {
+        if (!stopped) {
+          remember(r.signedIn);
+          setAccess(r.signedIn ? "yes" : "no");
+        }
       })
       .catch(() => {
-        if (!cancelled) setSyncStatus(null);
+        if (!stopped) {
+          setOnline(false);
+          setAccess(remembered() ? "yes" : "no");
+        }
       });
-
+    const hash = () => {
+      setRoute(location.hash.slice(1) || "library");
+      setMessage("");
+    };
+    window.addEventListener("hashchange", hash);
+    const storage = (e: StorageEvent) => {
+      if (e.key === "book-highlights-unlocked" && e.newValue !== "yes") {
+        active.current = false;
+        setAccess("no");
+        setBooks([]);
+      }
+    };
+    window.addEventListener("storage", storage);
     return () => {
-      cancelled = true;
+      stopped = true;
+      window.removeEventListener("hashchange", hash);
+      window.removeEventListener("storage", storage);
     };
   }, []);
-
-  function navigate(nextView: View) {
-    setView(nextView);
-    window.history.replaceState(null, "", `#${nextView}`);
-  }
-
-  async function refreshSyncStatus() {
-    try {
-      setSyncStatus(await getSyncStatus());
-    } catch {
-      setSyncStatus(null);
-    }
-  }
-
-  async function refreshLocalState() {
-    setLibraryRefresh((value) => value + 1);
-    await refreshSyncStatus();
-  }
-
-  async function handleSyncNow() {
-    setSyncMessage("");
-    const transport = createConfiguredSyncTransport();
-
-    if (!transport) {
-      setSyncMessage("Sync needs backend setup.");
+  useEffect(() => {
+    active.current = access === "yes";
+    if (access !== "yes") return;
+    void refresh();
+    void sync(true);
+    const connected = () => {
+      setOnline(navigator.onLine);
+      if (navigator.onLine) void sync(true);
+    };
+    const focus = () => {
+      if (document.visibilityState === "visible") void sync();
+    };
+    window.addEventListener("online", connected);
+    window.addEventListener("offline", connected);
+    document.addEventListener("visibilitychange", focus);
+    const interval = setInterval(() => void sync(), 15000);
+    return () => {
+      active.current = false;
+      clearInterval(interval);
+      window.removeEventListener("online", connected);
+      window.removeEventListener("offline", connected);
+      document.removeEventListener("visibilitychange", focus);
+    };
+  }, [access, refresh, sync]);
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(""), 6000);
+    return () => clearTimeout(timer);
+  }, [message]);
+  async function logout() {
+    if (syncBusy.current || scanBusy.current) {
+      setMessage(
+        "Wait for the current save or photo to finish, then sign out.",
+      );
       return;
     }
-
-    setIsSyncing(true);
-    const result = await syncPendingChanges(transport);
-    await refreshSyncStatus();
-    setIsSyncing(false);
-
-    if (result.status === "idle") {
-      setSyncMessage("No changes to sync.");
-    } else if (result.status === "synced") {
-      setSyncMessage(`Synced ${result.pushed} ${result.pushed === 1 ? "change" : "changes"}.`);
-    } else {
-      setSyncMessage(result.error);
+    if (
+      (await repo.getSyncStatus()).pendingCount ||
+      (await repo.listScans()).length
+    ) {
+      setMessage(
+        "Sync your changes and review or discard your photos before signing out. You can export a backup from Library.",
+      );
+      return;
+    }
+    try {
+      await api("/api/auth/logout", {});
+      active.current = false;
+      remember(false);
+      setAccess("no");
+      setBooks([]);
+      await repo.resetLocalDatabase();
+    } catch {
+      setMessage("Reconnect to sign out and remove this device’s copy.");
     }
   }
-
+  const navigate = (next: string) => {
+    location.hash = next;
+    setRoute(next);
+    setMessage("");
+    window.scrollTo(0, 0);
+  };
+  const book = route.startsWith("book/")
+    ? books.find((b) => b.id === route.slice(5))
+    : undefined;
   return (
     <>
       <nav className="app-nav" aria-label="Primary navigation">
@@ -94,234 +275,814 @@ export default function App() {
             <span>Book</span>
             <span>Highlights</span>
           </a>
-          <div className="nav-links">
-            <a
-              href="#library"
-              aria-current={view === "library" ? "page" : undefined}
-              onClick={() => navigate("library")}
-            >
-              Library
-            </a>
-            <a
-              href="#search"
-              aria-current={view === "search" ? "page" : undefined}
-              onClick={() => navigate("search")}
-            >
-              Search
-            </a>
-            <a
-              href="#import"
-              aria-current={view === "import" ? "page" : undefined}
-              onClick={() => navigate("import")}
-            >
-              Import
-            </a>
-          </div>
-          <SyncBadge status={syncStatus} isSyncing={isSyncing} onSyncNow={handleSyncNow} />
+          {access === "yes" && (
+            <>
+              <div className="nav-links">
+                {["library", "search", "import"].map((v) => (
+                  <a
+                    key={v}
+                    href={"#" + v}
+                    aria-current={route === v ? "page" : undefined}
+                    onClick={() => navigate(v)}
+                  >
+                    {v[0].toUpperCase() + v.slice(1)}
+                  </a>
+                ))}
+              </div>
+              <button className="text-button" onClick={() => void logout()}>
+                Sign out
+              </button>
+            </>
+          )}
         </div>
       </nav>
-      {syncMessage && <div className="sync-message">{syncMessage}</div>}
-
       <main className="container">
-        {view === "library" && (
-          <LibraryView refreshToken={libraryRefresh} onLocalChange={refreshSyncStatus} />
+        {access === "checking" ? (
+          <p role="status">Opening your library…</p>
+        ) : access === "no" ? (
+          <Login
+            onSignedIn={() => {
+              remember(true);
+              setAccess("yes");
+            }}
+          />
+        ) : (
+          <>
+            {(!online || pending > 0 || syncError) && (
+              <div className="sync-notice" role="status">
+                <span>
+                  {!online
+                    ? "Offline — changes stay on this device."
+                    : syncError ||
+                      `${pending} ${pending === 1 ? "change" : "changes"} waiting to sync.`}
+                </span>
+                {online && (
+                  <button
+                    className="text-button"
+                    disabled={syncing}
+                    onClick={() => void sync(true)}
+                  >
+                    {syncing ? "Syncing…" : "Retry sync"}
+                  </button>
+                )}
+                {syncError.includes("Sign in") && (
+                  <button
+                    className="text-button"
+                    onClick={() => setAccess("no")}
+                  >
+                    Sign in again
+                  </button>
+                )}
+              </div>
+            )}
+            {route === "library" && (
+              <Library books={books} onChange={changed} navigate={navigate} />
+            )}
+            {route === "search" && <Search books={books} navigate={navigate} />}
+            {route === "import" && <Import onChange={changed} />}
+            {route.startsWith("book/") &&
+              (book ? (
+                <BookDetail
+                  key={book.id}
+                  book={book}
+                  scans={scans.filter((p) => p.bookId === book.id)}
+                  onChange={changed}
+                  navigate={navigate}
+                />
+              ) : (
+                <>
+                  <h1>Book unavailable</h1>
+                  <p>
+                    This book may have been removed or may still be syncing.
+                  </p>
+                  <a href="#library">Back to Library</a>
+                </>
+              ))}
+          </>
         )}
-        {view === "search" && <SearchView />}
-        {view === "import" && <ImportView onImported={refreshLocalState} />}
       </main>
+      {message && (
+        <div className="toast" role="status">
+          <span>{message}</span>
+          <button aria-label="Dismiss" onClick={() => setMessage("")}>
+            ×
+          </button>
+        </div>
+      )}
     </>
   );
 }
-
-function SyncBadge({
-  status,
-  isSyncing,
-  onSyncNow,
-}: {
-  status: SyncStatus | null;
-  isSyncing: boolean;
-  onSyncNow: () => void;
-}) {
-  const pendingCount = status?.pendingCount ?? 0;
-  const label =
-    pendingCount === 0
-      ? "Synced locally"
-      : `${pendingCount} ${pendingCount === 1 ? "change" : "changes"} pending`;
-
-  return (
-    <div className="sync-control" aria-live="polite">
-      <span className="sync-badge">{label}</span>
-      <button className="sync-button" type="button" onClick={onSyncNow} disabled={isSyncing}>
-        {isSyncing ? "Syncing" : "Sync now"}
-      </button>
-    </div>
-  );
-}
-
-function getInitialView(): View {
-  const hash = window.location.hash.replace(/^#/, "");
-  if (hash === "search" || hash === "import") return hash;
-  return "library";
-}
-
-function LibraryView({
-  refreshToken,
-  onLocalChange,
-}: {
-  refreshToken: number;
-  onLocalChange: () => Promise<void>;
-}) {
-  const [books, setBooks] = useState<ExportedBook[]>([]);
-  const [isAddingBook, setIsAddingBook] = useState(false);
-  const [manualTitle, setManualTitle] = useState("");
-  const [manualAuthor, setManualAuthor] = useState("");
-  const [manualMessage, setManualMessage] = useState("");
-
-  async function loadLibrary() {
-    const library = await exportLibrary();
-    setBooks(library.books);
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    exportLibrary().then((library) => {
-      if (!cancelled) setBooks(library.books);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshToken]);
-
-  async function handleAddBook(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setManualMessage("");
-
+function Login({ onSignedIn }: { onSignedIn: () => void }) {
+  const [email, setEmail] = useState(""),
+    [challenge, setChallenge] = useState(""),
+    [code, setCode] = useState(""),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
     try {
-      await addBook({ title: manualTitle, author: manualAuthor, source: "manual" });
-      setManualTitle("");
-      setManualAuthor("");
-      setIsAddingBook(false);
-      await loadLibrary();
-      await onLocalChange();
-    } catch (error) {
-      setManualMessage(error instanceof Error ? error.message : "Book could not be saved.");
+      if (challenge) {
+        await api("/api/auth/verify", {
+          challengeId: challenge,
+          code: code.replace(/\s/g, ""),
+        });
+        onSignedIn();
+      } else {
+        const result = await api("/api/auth/request", { email });
+        setChallenge(result.challengeId);
+      }
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
     }
   }
-
   return (
-    <section aria-labelledby="library-heading">
+    <section className="login-panel">
+      <h1>Your reading, collected.</h1>
+      <p>Sign in to your private library.</p>
+      <form onSubmit={submit} className="stack">
+        {!challenge ? (
+          <label>
+            Email
+            <input
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </label>
+        ) : (
+          <>
+            <p>
+              Check your email for an eight-digit code. It expires in 10
+              minutes. If needed, check Spam.
+            </p>
+            <label>
+              Sign-in code
+              <input
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9 ]{8,12}"
+                required
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+              />
+            </label>
+          </>
+        )}
+        <button className="btn btn-primary" disabled={busy}>
+          {busy ? "Please wait…" : challenge ? "Sign in" : "Email me a code"}
+        </button>
+        {error && <p role="alert">{error}</p>}
+      </form>
+      {challenge && (
+        <button
+          className="text-button"
+          onClick={() => {
+            setChallenge("");
+            setCode("");
+            setError("");
+          }}
+        >
+          Use another email or request a new code
+        </button>
+      )}
+    </section>
+  );
+}
+function Library({
+  books,
+  onChange,
+  navigate,
+}: {
+  books: Book[];
+  onChange: () => Promise<void>;
+  navigate: (s: string) => void;
+}) {
+  const [adding, setAdding] = useState(false),
+    [query, setQuery] = useState("");
+  return (
+    <section>
       <div className="library-header">
-        <h1 id="library-heading">Your Library</h1>
+        <h1>Your Library</h1>
         <div className="library-actions">
-          <a href="#export" className="btn btn-secondary">
+          <button className="btn" onClick={exportDownload}>
             Export JSON
-          </a>
-          <button className="btn btn-primary" onClick={() => setIsAddingBook(true)}>
+          </button>
+          <button className="btn btn-primary" onClick={() => setAdding(true)}>
             + Add Book
           </button>
         </div>
       </div>
-
-      {isAddingBook && (
-        <form className="manual-book-form" onSubmit={handleAddBook}>
-          <label>
-            <span>Title</span>
-            <input
-              required
-              type="text"
-              value={manualTitle}
-              onChange={(event) => setManualTitle(event.target.value)}
-            />
-          </label>
-          <label>
-            <span>Author</span>
-            <input
-              type="text"
-              value={manualAuthor}
-              onChange={(event) => setManualAuthor(event.target.value)}
-            />
-          </label>
-          <div className="form-actions">
-            <button className="btn btn-primary" type="submit">
-              Save Book
-            </button>
-            <button
-              className="btn"
-              type="button"
-              onClick={() => {
-                setIsAddingBook(false);
-                setManualMessage("");
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-          {manualMessage && <p className="status-message">{manualMessage}</p>}
-        </form>
+      {adding && (
+        <BookForm
+          onSave={async (p) => {
+            const b = await repo.addBook(p);
+            await onChange();
+            setAdding(false);
+            navigate("book/" + b.id);
+          }}
+          onCancel={() => setAdding(false)}
+        />
       )}
-
+      {books.length > 0 && (
+        <label className="library-filter">
+          <span className="sr-only">Filter books</span>
+          <input
+            type="search"
+            placeholder="Find a book or author"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </label>
+      )}
       {books.length === 0 ? (
-        <div className="empty">
-          <p>No books yet. Add a book or import Kindle highlights to get started.</p>
-        </div>
+        <p className="empty">
+          No books yet. Add a book or import Kindle highlights to get started.
+        </p>
       ) : (
-        <div className="book-list" aria-label="Library books">
-          {books.map((book) => (
-            <article className="book-card" key={book.id}>
-              <h2>{book.title}</h2>
-              {book.author && <p className="book-meta">{book.author}</p>}
-              <p className="book-count">
-                {book.highlights.length} {book.highlights.length === 1 ? "highlight" : "highlights"}
-              </p>
-            </article>
-          ))}
+        <div className="book-list">
+          {books
+            .filter((b) =>
+              (b.title + " " + b.author)
+                .toLowerCase()
+                .includes(query.toLowerCase()),
+            )
+            .map((b) => (
+              <article className="book-card" key={b.id}>
+                <h2>
+                  <a
+                    href={"#book/" + b.id}
+                    onClick={() => navigate("book/" + b.id)}
+                  >
+                    {b.title}
+                  </a>
+                </h2>
+                <p className="book-meta">{b.author}</p>
+                <p className="book-count">
+                  {b.highlights.length}{" "}
+                  {b.highlights.length === 1 ? "highlight" : "highlights"}
+                </p>
+              </article>
+            ))}
         </div>
       )}
     </section>
   );
 }
-
-function SearchView() {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<HighlightSearchResult[]>([]);
-  const [hasSearched, setHasSearched] = useState(false);
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setResults(await searchHighlights(query));
-    setHasSearched(true);
+function BookForm({
+  book,
+  onSave,
+  onCancel,
+}: {
+  book?: Book;
+  onSave: (p: {
+    title: string;
+    author: string;
+    notes: string;
+    isbn: string;
+  }) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [title, setTitle] = useState(book?.title ?? ""),
+    [author, setAuthor] = useState(book?.author ?? ""),
+    [notes, setNotes] = useState(book?.notes ?? ""),
+    [isbn, setIsbn] = useState(book?.isbn ?? ""),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  async function lookup() {
+    setBusy(true);
+    setError("");
+    try {
+      const found = await api("/api/isbn/" + encodeURIComponent(isbn));
+      setTitle(found.title);
+      setAuthor(found.author);
+      setIsbn(found.isbn);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
   }
-
   return (
-    <section aria-labelledby="search-heading">
-      <h1 id="search-heading">Search Highlights</h1>
-      <form className="search-form" onSubmit={handleSubmit}>
+    <form
+      className="stack panel"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        try {
+          await onSave({ title, author, notes, isbn });
+        } catch (e) {
+          setError(errorText(e));
+          setBusy(false);
+        }
+      }}
+    >
+      <label>
+        Title
         <input
+          required
+          maxLength={500}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+      </label>
+      <label>
+        Author
+        <input
+          maxLength={500}
+          value={author}
+          onChange={(e) => setAuthor(e.target.value)}
+        />
+      </label>
+      <label>
+        ISBN, if you have it
+        <input
+          maxLength={20}
+          value={isbn}
+          onChange={(e) => setIsbn(e.target.value)}
+        />
+      </label>
+      <button
+        className="text-button"
+        type="button"
+        disabled={busy || !isbn.trim()}
+        onClick={() => void lookup()}
+      >
+        Look up title and author
+      </button>
+      <label>
+        Book notes
+        <textarea
+          rows={3}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+        />
+      </label>
+      <div className="form-actions">
+        <button className="btn btn-primary" disabled={busy}>
+          {busy ? "Please wait…" : "Save Book"}
+        </button>
+        <button className="btn" type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+      {error && <p role="alert">{error}</p>}
+    </form>
+  );
+}
+function BookDetail({
+  book,
+  scans,
+  onChange,
+  navigate,
+}: {
+  book: Book;
+  scans: repo.LocalScan[];
+  onChange: () => Promise<void>;
+  navigate: (s: string) => void;
+}) {
+  const [edit, setEdit] = useState(false),
+    [adding, setAdding] = useState(false),
+    [removing, setRemoving] = useState(false),
+    [error, setError] = useState("");
+  return (
+    <section>
+      <a className="back-link" href="#library">
+        ← Library
+      </a>
+      <h1 className="book-title">{book.title}</h1>
+      <p className="book-author">{book.author}</p>
+      {edit ? (
+        <BookForm
+          book={book}
+          onSave={async (p) => {
+            const patch = Object.fromEntries(
+              Object.entries(p).filter(([k, v]) => book[k as keyof Book] !== v),
+            );
+            await repo.updateBook(book.id, patch);
+            setEdit(false);
+            await onChange();
+          }}
+          onCancel={() => setEdit(false)}
+        />
+      ) : (
+        <>
+          <p className="book-notes">{book.notes}</p>
+          <div className="form-actions">
+            <button className="btn btn-primary" onClick={() => setAdding(true)}>
+              Add highlight
+            </button>
+            <label className="btn file-button">
+              Photograph a page
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                capture="environment"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  setError("");
+                  try {
+                    await repo.addScan(book.id, f);
+                    await onChange();
+                  } catch (e) {
+                    setError(errorText(e));
+                  }
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <button className="text-button" onClick={() => setEdit(true)}>
+              Edit book
+            </button>
+            <button
+              className="text-button danger"
+              onClick={() => setRemoving(true)}
+            >
+              Delete book
+            </button>
+          </div>
+        </>
+      )}
+      {removing && (
+        <div className="panel" role="alert">
+          <p>
+            Delete this book and its {book.highlights.length} highlights from
+            your library and synced devices?
+          </p>
+          <button
+            className="btn danger"
+            onClick={async () => {
+              await repo.deleteBook(book.id);
+              await onChange();
+              navigate("library");
+            }}
+          >
+            Delete book and highlights
+          </button>{" "}
+          <button className="btn" onClick={() => setRemoving(false)}>
+            Keep book
+          </button>
+        </div>
+      )}
+      {error && <p role="alert">{error}</p>}
+      {adding && (
+        <HighlightForm
+          onSave={async (p) => {
+            await repo.addHighlight({ bookId: book.id, ...p });
+            setAdding(false);
+            await onChange();
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      )}
+      {scans.map((scan) => (
+        <ScanCard key={scan.id} scan={scan} onChange={onChange} />
+      ))}
+      <div className="highlight-list">
+        {book.highlights.length === 0 && !adding ? (
+          <p className="empty-inline">
+            No highlights yet. Write one, import from Kindle, or photograph a
+            marked page.
+          </p>
+        ) : (
+          book.highlights.map((h) => (
+            <Highlight key={h.id} highlight={h} onChange={onChange} />
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+function HighlightForm({
+  highlight,
+  onSave,
+  onCancel,
+}: {
+  highlight?: repo.LocalHighlight;
+  onSave: (p: {
+    text: string;
+    note: string;
+    pageNumber: number | null;
+    chapter: string;
+  }) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(highlight?.text ?? ""),
+    [note, setNote] = useState(highlight?.note ?? ""),
+    [page, setPage] = useState(highlight?.pageNumber?.toString() ?? ""),
+    [chapter, setChapter] = useState(highlight?.chapter ?? ""),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  return (
+    <form
+      className="stack panel"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        try {
+          await onSave({
+            text,
+            note,
+            pageNumber: page ? Number(page) : null,
+            chapter,
+          });
+        } catch (e) {
+          setError(errorText(e));
+          setBusy(false);
+        }
+      }}
+    >
+      <label>
+        Highlighted passage
+        <textarea
+          required
+          rows={5}
+          maxLength={50000}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
+      </label>
+      <label>
+        Your note
+        <textarea
+          rows={3}
+          maxLength={50000}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </label>
+      <div className="import-fields">
+        <label>
+          Page
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={page}
+            onChange={(e) => setPage(e.target.value)}
+          />
+        </label>
+        <label>
+          Chapter
+          <input value={chapter} onChange={(e) => setChapter(e.target.value)} />
+        </label>
+      </div>
+      <div className="form-actions">
+        <button className="btn btn-primary" disabled={busy}>
+          {busy ? "Saving…" : "Save highlight"}
+        </button>
+        <button className="btn" type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+      {error && <p role="alert">{error}</p>}
+    </form>
+  );
+}
+function Highlight({
+  highlight: h,
+  onChange,
+}: {
+  highlight: repo.LocalHighlight;
+  onChange: () => Promise<void>;
+}) {
+  const [edit, setEdit] = useState(false),
+    [remove, setRemove] = useState(false);
+  if (edit)
+    return (
+      <HighlightForm
+        highlight={h}
+        onSave={async (p) => {
+          const patch = Object.fromEntries(
+            Object.entries(p).filter(
+              ([k, v]) => h[k as keyof repo.LocalHighlight] !== v,
+            ),
+          );
+          await repo.updateHighlight(h.id, patch);
+          setEdit(false);
+          await onChange();
+        }}
+        onCancel={() => setEdit(false)}
+      />
+    );
+  return (
+    <article className="highlight-card">
+      <blockquote>{h.text}</blockquote>
+      {h.note && <p className="highlight-note">{h.note}</p>}
+      <p className="book-meta">
+        {[
+          h.pageNumber ? "Page " + h.pageNumber : "",
+          h.location ? "Location " + h.location : "",
+          h.chapter,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </p>
+      <div className="item-actions">
+        <button className="text-button" onClick={() => setEdit(true)}>
+          Edit
+        </button>
+        <button className="text-button" onClick={() => setRemove(true)}>
+          Delete
+        </button>
+        {h.sourceImage && (
+          <a
+            href={"/api/scans/" + encodeURIComponent(h.sourceImage)}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Source photo
+          </a>
+        )}
+      </div>
+      {remove && (
+        <div role="alert">
+          <p>Delete this highlight?</p>
+          <button
+            className="text-button danger"
+            onClick={async () => {
+              await repo.deleteHighlight(h.id);
+              await onChange();
+            }}
+          >
+            Delete highlight
+          </button>{" "}
+          <button className="text-button" onClick={() => setRemove(false)}>
+            Keep it
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+function ScanCard({
+  scan,
+  onChange,
+}: {
+  scan: repo.LocalScan;
+  onChange: () => Promise<void>;
+}) {
+  const [url, setUrl] = useState(""),
+    [passages, setPassages] = useState(scan.passages),
+    [error, setError] = useState("");
+  useEffect(() => {
+    const u = URL.createObjectURL(scan.image);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [scan.image]);
+  useEffect(() => setPassages(scan.passages), [scan.passages]);
+  return (
+    <article className="panel scan-card">
+      <h2>
+        {scan.status === "review"
+          ? "Review your scan"
+          : scan.status === "failed"
+            ? "Photo needs a retry"
+            : "Photo saved on this device"}
+      </h2>
+      <img src={url} alt="Your photographed page" />
+      {scan.status === "pending" && (
+        <p>
+          Extraction starts when you’re connected. Keep this app open while it
+          processes.
+        </p>
+      )}
+      {scan.error && <p role="alert">{scan.error}</p>}
+      {scan.warning && <p>{scan.warning}</p>}
+      {scan.status === "review" && (
+        <>
+          <p>
+            Check the wording before saving. Remove any passage you don’t want.
+          </p>
+          {passages.map((p, i) => (
+            <label key={i}>
+              Passage {i + 1}
+              <textarea
+                rows={4}
+                value={p.text}
+                onChange={(e) =>
+                  setPassages((old) =>
+                    old.map((x, j) =>
+                      j === i ? { ...x, text: e.target.value } : x,
+                    ),
+                  )
+                }
+              />
+              <button
+                className="text-button"
+                onClick={() =>
+                  setPassages((old) => old.filter((_, j) => j !== i))
+                }
+              >
+                Remove passage
+              </button>
+            </label>
+          ))}
+          {passages.length === 0 && (
+            <p>No marked passages to save. Try a closer, clearer photo.</p>
+          )}
+          <button
+            className="btn btn-primary"
+            disabled={!passages.some((p) => p.text.trim())}
+            onClick={async () => {
+              try {
+                await repo.saveScanHighlights(scan.id, passages);
+                await onChange();
+              } catch (e) {
+                setError(errorText(e));
+              }
+            }}
+          >
+            Save reviewed highlights
+          </button>
+        </>
+      )}
+      {scan.status === "failed" && (
+        <button
+          className="btn"
+          onClick={async () => {
+            await repo.updateScan(scan.id, { status: "pending", error: "" });
+            await onChange();
+          }}
+        >
+          Retry extraction
+        </button>
+      )}{" "}
+      <button
+        className="text-button"
+        onClick={async () => {
+          await repo.removeScan(scan.id);
+          await onChange();
+        }}
+      >
+        Discard photo
+      </button>
+      {error && <p role="alert">{error}</p>}
+    </article>
+  );
+}
+function Search({
+  books,
+  navigate,
+}: {
+  books: Book[];
+  navigate: (s: string) => void;
+}) {
+  const [query, setQuery] = useState(""),
+    [searched, setSearched] = useState("");
+  const results = books.flatMap((b) =>
+    b.highlights
+      .filter((h) =>
+        (h.text + " " + h.note + " " + b.title + " " + b.author)
+          .toLowerCase()
+          .includes(searched.toLowerCase()),
+      )
+      .map((h) => ({ b, h })),
+  );
+  return (
+    <section>
+      <h1>Search Highlights</h1>
+      <form
+        className="search-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setSearched(query.trim());
+        }}
+      >
+        <label className="sr-only" htmlFor="search">
+          Search highlights and notes
+        </label>
+        <input
+          id="search"
           type="search"
           placeholder="Search across all your highlights and notes..."
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(e) => setQuery(e.target.value)}
         />
-        <button type="submit" className="btn btn-primary">
-          Search
-        </button>
+        <button className="btn btn-primary">Search</button>
       </form>
-
-      {hasSearched && (
+      {searched && (
         <div className="search-results" aria-live="polite">
           {results.length === 0 ? (
-            <p className="empty-inline">No matching highlights.</p>
+            <p>No matching highlights.</p>
           ) : (
-            results.map((result) => (
-              <article className="highlight-card" key={result.highlightId}>
-                <p>{result.text}</p>
-                <p className="book-meta">
-                  {result.bookTitle}
-                  {result.bookAuthor ? `, ${result.bookAuthor}` : ""}
-                </p>
-                {result.note && <p className="highlight-note">{result.note}</p>}
+            results.map(({ b, h }) => (
+              <article className="highlight-card" key={h.id}>
+                <blockquote>{h.text}</blockquote>
+                {h.note && <p className="highlight-note">{h.note}</p>}
+                <a
+                  href={"#book/" + b.id}
+                  onClick={() => navigate("book/" + b.id)}
+                >
+                  {b.title}
+                  {b.author ? ", " + b.author : ""}
+                </a>
               </article>
             ))
           )}
@@ -330,77 +1091,121 @@ function SearchView() {
     </section>
   );
 }
-
-function ImportView({ onImported }: { onImported: () => Promise<void> }) {
-  const [paste, setPaste] = useState("");
-  const [titleOverride, setTitleOverride] = useState("");
-  const [authorOverride, setAuthorOverride] = useState("");
-  const [message, setMessage] = useState("");
-  const [isImporting, setIsImporting] = useState(false);
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setIsImporting(true);
+function Import({ onChange }: { onChange: () => Promise<void> }) {
+  const [paste, setPaste] = useState(""),
+    [title, setTitle] = useState(""),
+    [author, setAuthor] = useState(""),
+    [message, setMessage] = useState(""),
+    [busy, setBusy] = useState(false);
+  async function run(task: () => Promise<string>) {
+    setBusy(true);
     setMessage("");
-
     try {
-      const result = await importNotebookPaste({ paste, titleOverride, authorOverride });
-      setMessage(
-        result.imported > 0
-          ? `Imported ${result.imported} ${result.imported === 1 ? "highlight" : "highlights"}.`
-          : `No new highlights. Skipped ${result.skipped} duplicate ${result.skipped === 1 ? "highlight" : "highlights"}.`,
-      );
-      setPaste("");
-      await onImported();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Import failed.");
+      setMessage(await task());
+      await onChange();
+    } catch (e) {
+      setMessage(errorText(e));
     } finally {
-      setIsImporting(false);
+      setBusy(false);
     }
   }
-
   return (
-    <section aria-labelledby="import-heading">
-      <h1 id="import-heading">Import Highlights</h1>
-
+    <section>
+      <h1>Import Highlights</h1>
       <h2>Kindle Notebook (paste from web)</h2>
       <p className="help-copy">
-        Go to{" "}
-        <a href="https://read.amazon.com/notebook" target="_blank" rel="noreferrer">
-          read.amazon.com/notebook
+        Open a book at{" "}
+        <a
+          href="https://read.amazon.com/notebook"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Kindle Notebook
         </a>
-        , select a book, then select all highlights (Ctrl+A / Cmd+A) and copy-paste them below.
-        Safe to repeat — duplicates are skipped automatically.
+        , select its highlights and paste them below. Repeat imports skip
+        duplicates.
       </p>
-
-      <form className="import-form" onSubmit={handleSubmit}>
-        <textarea
-          rows={10}
-          value={paste}
-          onChange={(event) => setPaste(event.target.value)}
-          placeholder={
-            "Paste your highlights here...\n\nExample format:\nYellow highlight | Location: 150\nThe actual highlighted text..."
-          }
-        />
+      <form
+        className="stack"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run(async () => {
+            const r = await repo.importNotebookPaste({
+              paste,
+              titleOverride: title,
+              authorOverride: author,
+            });
+            setPaste("");
+            return `Imported ${r.imported} highlights. Skipped ${r.skipped} duplicates.`;
+          });
+        }}
+      >
+        <label>
+          Notebook text
+          <textarea
+            required
+            placeholder="Paste your highlights here..."
+            rows={8}
+            value={paste}
+            onChange={(e) => setPaste(e.target.value)}
+          />
+        </label>
         <div className="import-fields">
-          <input
-            type="text"
-            placeholder="Book title (auto-detected)"
-            value={titleOverride}
-            onChange={(event) => setTitleOverride(event.target.value)}
-          />
-          <input
-            type="text"
-            placeholder="Author (auto-detected)"
-            value={authorOverride}
-            onChange={(event) => setAuthorOverride(event.target.value)}
-          />
+          <label>
+            Book title
+            <input
+              placeholder="Book title (auto-detected)"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </label>
+          <label>
+            Author
+            <input
+              placeholder="Author (auto-detected)"
+              value={author}
+              onChange={(e) => setAuthor(e.target.value)}
+            />
+          </label>
         </div>
-        <button type="submit" className="btn btn-primary" disabled={isImporting}>
-          {isImporting ? "Importing..." : "Import from Paste"}
+        <button className="btn btn-primary" disabled={busy}>
+          {busy ? "Importing…" : "Import from Paste"}
         </button>
-        {message && <p className="status-message">{message}</p>}
       </form>
+      <section className="import-file">
+        <h2>Import a file</h2>
+        <p>
+          Use Kindle’s My Clippings.txt or a Book Highlights JSON backup.
+          Existing records are kept.
+        </p>
+        <label className="btn file-button">
+          Choose a file
+          <input
+            type="file"
+            accept=".txt,.json,text/plain,application/json"
+            disabled={busy}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              void run(async () => {
+                if (f.size > 20 * 1024 * 1024)
+                  throw new Error("Choose a file smaller than 20 MB.");
+                const text = await f.text();
+                if (f.name.toLowerCase().endsWith(".json"))
+                  return `Imported ${await repo.importBackup(JSON.parse(text))} highlights.`;
+                const r = await repo.importClippings(text);
+                return `Imported ${r.imported} highlights. Skipped ${r.skipped} duplicates.`;
+              });
+              e.target.value = "";
+            }}
+          />
+        </label>
+      </section>
+      {message && (
+        <p className="status-message" role="status">
+          {message}
+        </p>
+      )}
     </section>
   );
 }

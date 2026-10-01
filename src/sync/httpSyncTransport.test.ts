@@ -36,14 +36,19 @@ describe("HTTP sync transport", () => {
       }),
     ).resolves.toEqual({ cursor: "cursor-3" });
 
-    expect(fetchImpl).toHaveBeenCalledWith("https://book.example/api/sync/push", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer secret-token",
-        "content-type": "application/json",
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://book.example/api/sync/push",
+      {
+        method: "POST",
+        credentials: "same-origin",
+        signal: expect.any(AbortSignal),
+        headers: {
+          authorization: "Bearer secret-token",
+          "content-type": "application/json",
+        },
+        body: expect.any(String),
       },
-      body: expect.any(String),
-    });
+    );
     expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toMatchObject({
       cursor: "cursor-2",
       operations: [
@@ -68,7 +73,9 @@ describe("HTTP sync transport", () => {
       fetchImpl,
     });
 
-    await expect(transport.push({ cursor: "", operations: [] })).rejects.toThrow("Unauthorized");
+    await expect(
+      transport.push({ cursor: "", operations: [] }),
+    ).rejects.toThrow("Unauthorized");
   });
 
   it("pulls remote sync events from the Worker", async () => {
@@ -95,11 +102,16 @@ describe("HTTP sync transport", () => {
       cursor: "cursor-4",
       events: [{ id: "event-1", entity: "book", entityId: "book-1" }],
     });
-    expect(fetchImpl).toHaveBeenCalledWith("https://book.example/api/sync/pull?since=cursor-3", {
-      method: "GET",
-      headers: {
-        authorization: "Bearer secret-token",
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://book.example/api/sync/pull?since=cursor-3",
+      {
+        method: "GET",
+        credentials: "same-origin",
+        signal: expect.any(AbortSignal),
+        headers: {
+          authorization: "Bearer secret-token",
+        },
       },
-    });
+    );
   });
 });

@@ -64,6 +64,7 @@ export interface LocalOutboxOperation {
   action: OutboxAction;
   status: OutboxStatus;
   payload: LocalBook | LocalHighlight;
+  changedFields?: string[];
   createdAt: string;
   updatedAt: string;
   attemptCount: number;
@@ -86,7 +87,18 @@ export interface SyncStatus {
   lastAttemptedAt: string | null;
 }
 
+export interface LocalScan {
+  id: string;
+  bookId: string;
+  image: Blob;
+  createdAt: string;
+  status: "pending" | "review" | "failed";
+  error: string;
+  passages: Array<{ text: string; pageNumber: number | null }>;
+  warning: string;
+}
 interface BookHighlightsDatabase extends Dexie {
+  scans: EntityTable<LocalScan, "id">;
   books: EntityTable<LocalBook, "id">;
   highlights: EntityTable<LocalHighlight, "id">;
   outbox: EntityTable<LocalOutboxOperation, "id">;
@@ -108,6 +120,14 @@ db.version(2).stores({
   syncState: "id",
 });
 
+db.version(3).stores({
+  books: "id, title, author, source, updatedAt, deletedAt",
+  highlights: "id, bookId, text, note, source, updatedAt, deletedAt",
+  outbox: "id, status, entity, entityId, createdAt, writeOrder",
+  syncState: "id",
+  scans: "id, bookId, status, createdAt",
+});
+
 export async function resetLocalDatabase(): Promise<void> {
   await db.delete();
   localWriteSequence = 0;
@@ -124,6 +144,7 @@ export async function addBook(input: {
   source?: BookSource;
   notes?: string;
 }): Promise<LocalBook> {
+  if (!input.title.trim()) throw new Error("Book title is required");
   const now = new Date().toISOString();
   const book: LocalBook = {
     id: crypto.randomUUID(),
@@ -139,7 +160,7 @@ export async function addBook(input: {
     updatedAt: now,
     deletedAt: null,
     version: 1,
-    writeOrder: ++localWriteSequence,
+    writeOrder: Date.now() * 1000 + (++localWriteSequence % 1000),
   };
 
   await db.transaction("rw", db.books, db.outbox, async () => {
@@ -164,6 +185,7 @@ export async function addHighlight(input: {
   source?: BookSource;
   sourceImage?: string;
 }): Promise<LocalHighlight> {
+  if (!input.text.trim()) throw new Error("Highlight text is required");
   const book = await db.books.get(input.bookId);
   if (!book || book.deletedAt) {
     throw new Error("Book not found");
@@ -184,7 +206,7 @@ export async function addHighlight(input: {
     updatedAt: now,
     deletedAt: null,
     version: 1,
-    writeOrder: ++localWriteSequence,
+    writeOrder: Date.now() * 1000 + (++localWriteSequence % 1000),
   };
 
   await db.transaction("rw", db.highlights, db.outbox, async () => {
@@ -258,7 +280,9 @@ export async function importNotebookPaste(input: {
   };
 }
 
-export async function searchHighlights(query: string): Promise<HighlightSearchResult[]> {
+export async function searchHighlights(
+  query: string,
+): Promise<HighlightSearchResult[]> {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return [];
 
@@ -289,17 +313,28 @@ export async function searchHighlights(query: string): Promise<HighlightSearchRe
   return results;
 }
 
-export async function getPendingOutboxOperations(): Promise<LocalOutboxOperation[]> {
+export async function getPendingOutboxOperations(): Promise<
+  LocalOutboxOperation[]
+> {
   const operations = await db.outbox
-    .filter((operation) => operation.status === "pending" || operation.status === "failed")
+    .filter(
+      (operation) =>
+        operation.status === "pending" || operation.status === "failed",
+    )
     .toArray();
 
-  return operations.sort((a, b) => a.writeOrder - b.writeOrder);
+  return operations.sort(
+    (a, b) =>
+      a.createdAt.localeCompare(b.createdAt) || a.writeOrder - b.writeOrder,
+  );
 }
 
 export async function getSyncStatus(): Promise<SyncStatus> {
   const pendingCount = await db.outbox
-    .filter((operation) => operation.status === "pending" || operation.status === "failed")
+    .filter(
+      (operation) =>
+        operation.status === "pending" || operation.status === "failed",
+    )
     .count();
   const syncState = await getOrCreateSyncState();
 
@@ -367,7 +402,10 @@ export async function markOutboxOperationsFailed(
   });
 }
 
-async function findBookByTitleAuthor(title: string, author: string): Promise<LocalBook | undefined> {
+async function findBookByTitleAuthor(
+  title: string,
+  author: string,
+): Promise<LocalBook | undefined> {
   const normalizedTitle = normalizeComparable(title);
   const normalizedAuthor = normalizeComparable(author);
 
@@ -414,6 +452,7 @@ async function enqueueOutboxOperation(input: {
   entityId: string;
   action: OutboxAction;
   payload: LocalBook | LocalHighlight;
+  changedFields?: string[];
 }): Promise<LocalOutboxOperation> {
   const now = new Date().toISOString();
   const operation: LocalOutboxOperation = {
@@ -423,11 +462,12 @@ async function enqueueOutboxOperation(input: {
     action: input.action,
     status: "pending",
     payload: input.payload,
+    changedFields: input.changedFields,
     createdAt: now,
     updatedAt: now,
     attemptCount: 0,
     lastError: "",
-    writeOrder: ++localWriteSequence,
+    writeOrder: Date.now() * 1000 + (++localWriteSequence % 1000),
   };
 
   await db.outbox.add(operation);
@@ -475,4 +515,327 @@ export async function exportLibrary(): Promise<{
     exportedAt: new Date().toISOString(),
     books: exportedBooks,
   };
+}
+
+export async function updateBook(
+  id: string,
+  patch: Partial<
+    Pick<
+      LocalBook,
+      "title" | "author" | "notes" | "isbn" | "publisher" | "year"
+    >
+  >,
+) {
+  if (patch.title !== undefined && !patch.title.trim())
+    throw new Error("Book title is required");
+  return editRecord("book", id, patch);
+}
+export async function updateHighlight(
+  id: string,
+  patch: Partial<
+    Pick<LocalHighlight, "text" | "note" | "pageNumber" | "chapter">
+  >,
+) {
+  if (patch.text !== undefined && !patch.text.trim())
+    throw new Error("Highlight text is required");
+  return editRecord("highlight", id, patch);
+}
+async function editRecord(
+  entity: OutboxEntity,
+  id: string,
+  patch: Record<string, unknown>,
+) {
+  await db.transaction("rw", db.books, db.highlights, db.outbox, async () => {
+    const table = entity === "book" ? db.books : db.highlights;
+    const current = await table.get(id);
+    if (!current || current.deletedAt)
+      throw new Error("This item no longer exists");
+    const record = {
+      ...current,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+      version: current.version + 1,
+    };
+    await (table as EntityTable<LocalBook | LocalHighlight, "id">).put(record);
+    await enqueueOutboxOperation({
+      entity,
+      entityId: id,
+      action: patch.deletedAt ? "delete" : "upsert",
+      payload: record,
+      changedFields: Object.keys(patch),
+    });
+  });
+}
+export async function deleteHighlight(id: string) {
+  await editRecord("highlight", id, { deletedAt: new Date().toISOString() });
+}
+export async function deleteBook(id: string) {
+  await db.transaction(
+    "rw",
+    db.books,
+    db.highlights,
+    db.outbox,
+    db.scans,
+    async () => {
+      for (const h of await db.highlights.where("bookId").equals(id).toArray())
+        if (!h.deletedAt) await deleteHighlight(h.id);
+      await editRecord("book", id, { deletedAt: new Date().toISOString() });
+      await db.scans.where("bookId").equals(id).delete();
+    },
+  );
+}
+export async function applyRemoteEvents(
+  events: Array<{ entity: string; payload: Record<string, unknown> }>,
+  cursor: string,
+) {
+  await db.transaction(
+    "rw",
+    db.books,
+    db.highlights,
+    db.outbox,
+    db.syncState,
+    async () => {
+      const pending = await getPendingOutboxOperations();
+      for (const event of events) {
+        if (
+          !["book", "highlight"].includes(event.entity) ||
+          typeof event.payload.id !== "string"
+        )
+          throw new Error("Invalid sync response");
+        const table = (
+          event.entity === "book" ? db.books : db.highlights
+        ) as EntityTable<LocalBook | LocalHighlight, "id">;
+        const remote = { ...event.payload } as unknown as
+          LocalBook | LocalHighlight;
+        // Pending edits overlay only touched fields. Unrelated changes still arrive.
+        if (!remote.deletedAt)
+          for (const op of pending.filter(
+            (o) => o.entity === event.entity && o.entityId === remote.id,
+          )) {
+            for (const field of op.changedFields ?? Object.keys(op.payload))
+              if (!["version", "createdAt"].includes(field))
+                Object.assign(remote, {
+                  [field]: (op.payload as unknown as Record<string, unknown>)[
+                    field
+                  ],
+                });
+          }
+        await table.put(remote);
+      }
+      const state = await getOrCreateSyncState();
+      await db.syncState.put({
+        ...state,
+        cursor,
+        lastSyncedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    },
+  );
+}
+export async function addScan(bookId: string, image: Blob) {
+  if (
+    !["image/jpeg", "image/png", "image/webp"].includes(image.type) ||
+    image.size > 8 * 1024 * 1024
+  )
+    throw new Error("Choose a JPEG, PNG or WebP image smaller than 8 MB.");
+  const scan: LocalScan = {
+    id: crypto.randomUUID(),
+    bookId,
+    image,
+    createdAt: new Date().toISOString(),
+    status: "pending",
+    error: "",
+    passages: [],
+    warning: "",
+  };
+  await db.scans.add(scan);
+  return scan;
+}
+export async function listScans(bookId?: string) {
+  const all = await db.scans.toArray();
+  return all.filter((s) => !bookId || s.bookId === bookId);
+}
+export async function updateScan(
+  id: string,
+  patch: Partial<Pick<LocalScan, "status" | "passages" | "warning" | "error">>,
+) {
+  await db.scans.update(id, patch);
+}
+export async function removeScan(id: string) {
+  await db.scans.delete(id);
+}
+export async function saveScanHighlights(
+  id: string,
+  passages: Array<{ text: string; pageNumber: number | null }>,
+) {
+  await db.transaction(
+    "rw",
+    db.scans,
+    db.books,
+    db.highlights,
+    db.outbox,
+    async () => {
+      const scan = await db.scans.get(id);
+      if (!scan) throw new Error("Scan not found");
+      for (const p of passages)
+        if (p.text.trim())
+          await addHighlight({
+            bookId: scan.bookId,
+            text: p.text,
+            pageNumber: p.pageNumber,
+            source: "ocr",
+            sourceImage: id,
+          });
+      await db.scans.delete(id);
+    },
+  );
+}
+
+export async function importBackup(input: unknown) {
+  if (
+    !input ||
+    typeof input !== "object" ||
+    !Array.isArray((input as { books: unknown }).books)
+  )
+    throw new Error("Choose a Book Highlights JSON export.");
+  const raw = (input as { books: unknown[] }).books;
+  if (raw.length > 5000)
+    throw new Error("This backup contains too many books.");
+  // Validate and normalize everything before starting any writes. Accept old snake_case exports.
+  const now = new Date().toISOString();
+  const books = raw.map((value) => {
+    if (!value || typeof value !== "object")
+      throw new Error("Invalid book in backup");
+    const b = value as Record<string, unknown>;
+    if (
+      typeof b.title !== "string" ||
+      !b.title.trim() ||
+      !Array.isArray(b.highlights)
+    )
+      throw new Error("Invalid book in backup");
+    const text = (v: unknown) => (typeof v === "string" ? v : "");
+    const id = text(b.id) || crypto.randomUUID();
+    const book: LocalBook = {
+      id,
+      title: b.title,
+      author: text(b.author),
+      isbn: text(b.isbn),
+      coverUrl: text(b.coverUrl ?? b.cover_url),
+      publisher: text(b.publisher),
+      year: text(b.year),
+      source: "manual",
+      notes: text(b.notes),
+      createdAt: text(b.createdAt ?? b.created_at) || now,
+      updatedAt: now,
+      deletedAt: null,
+      version: 1,
+      writeOrder: Date.now() * 1000,
+    };
+    const highlights = b.highlights.map((value) => {
+      if (!value || typeof value !== "object")
+        throw new Error("Invalid highlight in backup");
+      const h = value as Record<string, unknown>;
+      if (typeof h.text !== "string" || !h.text.trim())
+        throw new Error("Invalid highlight text in backup");
+      const page = h.pageNumber ?? h.page_number;
+      return {
+        id: text(h.id) || crypto.randomUUID(),
+        bookId: id,
+        text: h.text,
+        note: text(h.note),
+        pageNumber:
+          typeof page === "number" && Number.isInteger(page) && page > 0
+            ? page
+            : null,
+        location: text(h.location),
+        chapter: text(h.chapter),
+        source: "manual",
+        sourceImage: "",
+        createdAt: text(h.createdAt ?? h.created_at) || now,
+        updatedAt: now,
+        deletedAt: null,
+        version: 1,
+        writeOrder: Date.now() * 1000,
+      } as LocalHighlight;
+    });
+    return { book, highlights };
+  });
+  let imported = 0;
+  await db.transaction("rw", db.books, db.highlights, db.outbox, async () => {
+    for (const { book, highlights } of books) {
+      if (!(await db.books.get(book.id))) {
+        await db.books.add(book);
+        await enqueueOutboxOperation({
+          entity: "book",
+          entityId: book.id,
+          action: "upsert",
+          payload: book,
+        });
+      }
+      for (const h of highlights)
+        if (
+          !(await db.highlights.get(h.id)) &&
+          !(await hasMatchingHighlight(h))
+        ) {
+          await db.highlights.add(h);
+          await enqueueOutboxOperation({
+            entity: "highlight",
+            entityId: h.id,
+            action: "upsert",
+            payload: h,
+          });
+          imported++;
+        }
+    }
+  });
+  return imported;
+}
+
+export async function importClippings(content: string) {
+  const { parseClippings, groupByBook } = await import("../lib/kindle-parser");
+  const groups = groupByBook(parseClippings(content));
+  if (!groups.length)
+    throw new Error("No Kindle clippings were found in this file.");
+  let imported = 0,
+    skipped = 0;
+  for (const group of groups) {
+    let book = await findBookByTitleAuthor(group.title, group.author);
+    if (!book)
+      book = await addBook({
+        title: group.title,
+        author: group.author,
+        source: "kindle",
+      });
+    for (const clip of group.clippings.filter(
+      (c) => c.clippingType === "highlight",
+    )) {
+      if (
+        await hasMatchingHighlight({
+          bookId: book.id,
+          text: clip.text,
+          location: clip.location,
+          pageNumber: clip.page,
+        })
+      ) {
+        skipped++;
+        continue;
+      }
+      const note = group.clippings
+        .filter(
+          (c) => c.clippingType === "note" && c.location === clip.location,
+        )
+        .map((c) => c.text)
+        .join("\n");
+      await addHighlight({
+        bookId: book.id,
+        text: clip.text,
+        note,
+        pageNumber: clip.page,
+        location: clip.location,
+        source: "kindle",
+      });
+      imported++;
+    }
+  }
+  return { imported, skipped };
 }

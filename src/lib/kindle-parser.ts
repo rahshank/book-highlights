@@ -32,7 +32,14 @@ export function parseClippings(content: string): KindleClipping[] {
 
     if (!text && clippingType === "highlight") continue;
 
-    clippings.push({ bookTitle: title, author, text, page, location, clippingType });
+    clippings.push({
+      bookTitle: title,
+      author,
+      text,
+      page,
+      location,
+      clippingType,
+    });
   }
 
   return clippings;
@@ -44,7 +51,11 @@ export function groupByBook(clippings: KindleClipping[]): KindleBook[] {
   for (const clip of clippings) {
     const key = `${clip.bookTitle}||${clip.author}`;
     if (!books.has(key)) {
-      books.set(key, { title: clip.bookTitle, author: clip.author, clippings: [] });
+      books.set(key, {
+        title: clip.bookTitle,
+        author: clip.author,
+        clippings: [],
+      });
     }
     books.get(key)!.clippings.push(clip);
   }
