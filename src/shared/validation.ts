@@ -1,3 +1,4 @@
+import { safeSourceLink } from "./capture";
 type Payload = Record<string, unknown>;
 export interface Operation {
   id: string;
@@ -8,6 +9,8 @@ export interface Operation {
   changedFields?: string[];
 }
 export const bookFields = [
+  "url",
+  "publishedAt",
   "title",
   "author",
   "isbn",
@@ -20,6 +23,7 @@ export const bookFields = [
   "deletedAt",
 ];
 export const highlightFields = [
+  "sourceLink",
   "bookId",
   "text",
   "note",
@@ -71,6 +75,8 @@ export function validateOperation(value: unknown): Operation {
     } else if (v != null && (typeof v !== "string" || v.length > 100000))
       throw new Error("Invalid field");
   }
+  for (const key of ["url", "sourceLink"])
+    if (p[key]) safeSourceLink(String(p[key]));
   if (
     op.changedFields &&
     (!Array.isArray(op.changedFields) ||

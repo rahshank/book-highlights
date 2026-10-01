@@ -10,7 +10,8 @@ Sign in with the owner email and the eight-digit code sent to that inbox. Sessio
 
 ## What it does
 
-- Add and edit books, notes and highlights; look up title/author by ISBN.
+- Add passages from books and articles in one Library. **Add highlight** accepts a passage, book title or article link, and optional note; choose an existing source to keep its passages together. Article links from the same canonical URL reuse that source.
+- Open **Edit details** for source metadata or ISBN lookup. **Add a title without a highlight** retains the notes/photo-first workflow.
 - Import Kindle Notebook text, My Clippings.txt, or a Book Highlights JSON backup. Repeat imports skip existing highlights.
 - Photograph a marked page, review the extracted wording, and save the passages. Photos wait on the capturing device while offline.
 - Search passages and notes across the library. Export the full local text library as JSON, including unsynced changes.
@@ -65,4 +66,14 @@ Encrypted Worker secrets: `OPENAI_API_KEY` (Responses access), `RESEND_API_KEY` 
 
 D1 changes and operation receipts are written by triggers in the same transaction as each record. Pull cursors are monotonic integers; push acknowledgements cannot skip unread events. Metadata uses field clocks; a deleted record cannot be resurrected by a stale device. Sessions and one-use codes are hashed in D1; mutation requests require the same origin. Private API responses and source photos are never placed in the service-worker cache.
 
-Migration history preserves the old Next/Vercel/Supabase app in Git. The legacy D1 database contained no books or highlights before the upgrade. An old Supabase JSON export can be restored through Import; no old Supabase content has been claimed as migrated. Optional Ghost/Roam publishing from the former prototype is outside this private-library rebuild.
+Migration history preserves the old Next/Vercel/Supabase app in Git. The legacy D1 database contained no books or highlights before the upgrade. An old Supabase JSON export can be restored through Import; no old Supabase content has been claimed as migrated. The approved legacy recovery restored 76 highlights across five books. Original source photos were unavailable; recovered text is intact.
+
+## Article capture and Roam
+
+In later’s reader, select text and choose **Save highlight**. The draft stays on that device until you open and save it in Highlights. If offline, Highlights must have been opened on that browser previously; otherwise leave the draft in later and open it when connected. Signed-out users can sign in without losing the transfer. A closed destination tab or lost receipt leaves a retryable draft; the same capture ID prevents repeat saves.
+
+For external pages, paste the passage and its URL into Add highlight. A full text-fragment link may prefill the quotation; range-only links cannot reconstruct missing words. Titles/authors from later are filled in; other links use manual source details rather than fetching arbitrary sites.
+
+Drafts in Highlights survive reloads in the same tab; save before closing it. Sign-out clears drafts. Saved highlights sync normally.
+
+Ask Codex to **sync my highlights to Roam** when wanted. The first 76 passages were exported on October 1; each source page has `[[Highlights]]`. Exports add new passages or explicit revisions without overwriting your Roam notes. No schedule or direct app-to-Roam credential is configured. See [Roam export routine](docs/ROAM_EXPORT.md).

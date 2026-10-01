@@ -571,3 +571,49 @@ blockquote {
     font-size: 36px;
   }
 }
+
+.capture-panel {
+  max-width: 740px;
+  margin: 0 auto;
+}
+.capture-panel textarea {
+  font:
+    19px/1.6 Georgia,
+    serif;
+}
+.capture-panel .optional {
+  color: var(--muted);
+  font-weight: normal;
+}
+.source-options {
+  border: 1px solid var(--border);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.source-options button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 12px;
+  background: var(--card);
+  color: var(--fg);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.source-options small {
+  display: block;
+  color: var(--muted);
+}
+.capture-panel details > .stack {
+  margin-top: 16px;
+}
+.capture-panel summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.library-secondary {
+  margin-top: 40px;
+  font-size: 14px;
+}
