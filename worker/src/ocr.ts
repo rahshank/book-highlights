@@ -158,7 +158,7 @@ export async function scan(
         );
       throw new Error(
         response.status === 429
-          ? "Photo extraction is temporarily busy. Retry shortly."
+          ? "OpenAI could not process this photo. Check the account’s API credit or retry later. Your photo remains on this device."
           : "Photo extraction failed. Please retry.",
       );
     }
