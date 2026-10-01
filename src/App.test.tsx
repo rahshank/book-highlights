@@ -32,7 +32,7 @@ afterEach(() => {
 it("creates a book, opens it, edits highlights and finds notes in search", async () => {
   const user = userEvent.setup();
   render(<App />);
-  await screen.findByRole("heading", { name: "Your Library" });
+  await screen.findByRole("heading", { name: "Books" });
   await user.click(screen.getByRole("button", { name: "+ Add Book" }));
   await user.type(screen.getByLabelText("Title"), "Test book");
   await user.type(screen.getByLabelText("Author"), "An author");
@@ -75,7 +75,7 @@ it("imports notebook text and makes the imported book readable", async () => {
   );
   await user.click(screen.getByRole("button", { name: "Import highlights" }));
   await screen.findByText("Imported 1 highlights. Skipped 0 duplicates.");
-  await user.click(screen.getByRole("link", { name: "Library" }));
+  await user.click(screen.getByRole("link", { name: "Books" }));
   await user.click(
     await screen.findByRole("link", { name: "The Great Transformation" }),
   );
@@ -105,7 +105,7 @@ it("requires sign-in on a fresh browser and accepts only a verified code", async
   render(<App />);
   await screen.findByRole("button", { name: "Email me a code" });
   expect(
-    screen.queryByRole("heading", { name: "Your Library" }),
+    screen.queryByRole("heading", { name: "Books" }),
   ).not.toBeInTheDocument();
   await user.type(screen.getByLabelText("Email"), "reader@example.test");
   await user.click(screen.getByRole("button", { name: "Email me a code" }));
@@ -113,7 +113,7 @@ it("requires sign-in on a fresh browser and accepts only a verified code", async
   await user.click(screen.getByRole("button", { name: "Sign in" }));
   await waitFor(() =>
     expect(
-      screen.getByRole("heading", { name: "Your Library" }),
+      screen.getByRole("heading", { name: "Books" }),
     ).toBeInTheDocument(),
   );
 });
