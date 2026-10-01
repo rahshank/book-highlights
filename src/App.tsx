@@ -293,7 +293,7 @@ export default function App() {
                     aria-current={route === v ? "page" : undefined}
                     onClick={() => navigate(v)}
                   >
-                    {v[0].toUpperCase() + v.slice(1)}
+                    {v === "library" ? "Books" : v[0].toUpperCase() + v.slice(1)}
                   </a>
                 ))}
               </div>
@@ -307,7 +307,7 @@ export default function App() {
       <main className="container">
         {access === "checking" || access === "leaving" ? (
           <p role="status">
-            {access === "leaving" ? "Signing out…" : "Opening your library…"}
+            {access === "leaving" ? "Signing out…" : "Opening your books…"}
           </p>
         ) : access === "no" ? (
           <Login
@@ -366,7 +366,7 @@ export default function App() {
                   <p>
                     This book may have been removed or may still be syncing.
                   </p>
-                  <a href="#library">Back to Library</a>
+                  <a href="#library">Back to books</a>
                 </>
               ))}
           </>
@@ -412,8 +412,8 @@ function Login({ onSignedIn }: { onSignedIn: () => void | Promise<void> }) {
   }
   return (
     <section className="login-panel">
-      <h1>Your reading, collected.</h1>
-      <p>Sign in to your private library.</p>
+      <h1>Sign in</h1>
+      <p>Access your saved highlights and notes.</p>
       <form onSubmit={submit} className="stack">
         {!challenge ? (
           <label>
@@ -479,7 +479,7 @@ function Library({
   return (
     <section>
       <div className="library-header">
-        <h1>Your Library</h1>
+        <h1>Books</h1>
         <div className="library-actions">
           <button className="btn" onClick={exportDownload}>
             Export JSON
@@ -678,7 +678,7 @@ export function BookDetail({
   return (
     <section>
       <a className="back-link" href="#library">
-        ← Library
+        ← Books
       </a>
       <h1 className="book-title">{book.title}</h1>
       <p className="book-author">{book.author}</p>
