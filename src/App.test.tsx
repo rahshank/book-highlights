@@ -68,12 +68,12 @@ it("imports notebook text and makes the imported book readable", async () => {
   window.history.replaceState(null, "", "#import");
   const user = userEvent.setup();
   render(<App />);
-  await screen.findByRole("heading", { name: "Import Highlights" });
+  await screen.findByRole("heading", { name: "Import highlights" });
   await user.type(
     screen.getByLabelText("Notebook text"),
     "The Great Transformation\nKarl Polanyi\n\nYellow highlight | Location: 150\nLaissez-faire was planned; planning was not.",
   );
-  await user.click(screen.getByRole("button", { name: "Import from Paste" }));
+  await user.click(screen.getByRole("button", { name: "Import highlights" }));
   await screen.findByText("Imported 1 highlights. Skipped 0 duplicates.");
   await user.click(screen.getByRole("link", { name: "Library" }));
   await user.click(
