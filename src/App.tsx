@@ -78,6 +78,7 @@ export default function App() {
     [syncError, setSyncError] = useState(""),
     [syncing, setSyncing] = useState(false),
     [online, setOnline] = useState(navigator.onLine);
+  const [sharedAccountOrigin,setSharedAccountOrigin] = useState<string>();
   const [message, setMessage] = useState("");
   const active = useRef(false),
     syncBusy = useRef(false),
@@ -194,6 +195,8 @@ export default function App() {
     let stopped = false;
     api("/api/auth/session")
       .then(async (r) => {
+        if(r.sharedAccountOrigin)setSharedAccountOrigin(r.sharedAccountOrigin);
+        if(r.signedIn&&sessionStorage.getItem("shared-sign-in")==="pending"){await repo.unlockLocalDatabase();sessionStorage.removeItem("shared-sign-in");}
         const allowed = r.signedIn && !(await repo.isLocalLocked());
         if (!stopped) {
           remember(allowed);
@@ -273,10 +276,11 @@ export default function App() {
     sessionStorage.removeItem(DRAFT_KEY);
     setAccess("leaving");
     try {
-      await api("/api/auth/logout", {});
+      const signedOut = await api("/api/auth/logout", {});
       await repo.finishSignOut();
       setAccess("no");
       setBooks([]);
+      if(signedOut?.url)location.assign(signedOut.url);
     } catch {
       await repo.unlockLocalDatabase();
       remember(true);
@@ -339,7 +343,7 @@ export default function App() {
             {access === "leaving" ? "Signing out…" : "Opening your library…"}
           </p>
         ) : access === "no" ? (
-          <Login
+          <Login sharedAccountOrigin={sharedAccountOrigin}
             onSignedIn={async () => {
               await repo.unlockLocalDatabase();
               remember(true);
@@ -403,7 +407,7 @@ export default function App() {
               )}
             {route === "search" && <Search books={books} navigate={navigate} />}
             {route === "import" && <Import onChange={changed} />}
-            {route === "security" && <Security />}
+            {route === "security" && <Security sharedAccountOrigin={sharedAccountOrigin} />}
             {route.startsWith("book/") &&
               (book ? (
                 <BookDetail

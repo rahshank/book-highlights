@@ -13,6 +13,7 @@ run_worker_first = true
 
 [vars]
 APP_ORIGIN = "https://highlights.rahulshankar.com"
+SHARED_AUTH_ORIGIN = "https://later.rahulshankar.com"
 OWNER_EMAIL = "rahulshankar24@gmail.com"
 OPENAI_MODEL = "gpt-4.1-mini"
 

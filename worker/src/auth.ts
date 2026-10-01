@@ -1,3 +1,4 @@
+import {sharedAuth,sharedSession} from './shared-account';
 import { betterAuth } from 'better-auth';
 import { emailOTP } from 'better-auth/plugins';
 import { passkey } from '@better-auth/passkey';
@@ -52,6 +53,7 @@ export async function ensureOwner(env:WorkerEnv){
  await env.DB.prepare('INSERT OR IGNORE INTO user(id,name,email,emailVerified,createdAt,updatedAt) VALUES(?,?,?,?,?,?)').bind('highlights-owner','Owner',env.OWNER_EMAIL.toLowerCase(),1,Date.now(),Date.now()).run();
 }
 export async function authenticated(request:Request,env:WorkerEnv){
+ if(env.SHARED_AUTH_ORIGIN)return Boolean(await sharedSession(request,env));
  if(Date.now()<LEGACY_AUTH_UNTIL&&await legacyAuthenticated(request,env))return true;
  if(!env.BETTER_AUTH_SECRET||!env.APP_ORIGIN)return false;
  const session=await createAuth(env).api.getSession({headers:request.headers});
@@ -59,6 +61,14 @@ export async function authenticated(request:Request,env:WorkerEnv){
 }
 export async function authRoute(request:Request,env:WorkerEnv,body:Record<string,unknown>,send:typeof fetch=fetch):Promise<Response>{
  const path=new URL(request.url).pathname.slice('/api/auth'.length);
+ if(env.SHARED_AUTH_ORIGIN){
+  if(path==='/session'&&request.method==='GET')return json({signedIn:Boolean(await sharedSession(request,env,send)),sharedAccountOrigin:env.SHARED_AUTH_ORIGIN});
+  if(path==='/logout'&&request.method==='POST'){const result=await sharedAuth(env,send).handler(new Request(env.APP_ORIGIN+'/api/auth/sign-out',{method:'POST',headers:request.headers,body:JSON.stringify({callbackURL:env.APP_ORIGIN+'/'})}));return result;}
+  if(!['/sign-in/social','/callback/personal','/get-session','/sign-out'].includes(path))return json({error:'Use your shared account. Reload Highlights to continue.'},409);
+  if(path==='/get-session')return json(await sharedSession(request,env,send));
+  await ensureOwner(env);
+  return sharedAuth(env,send).handler(request);
+ }
  if(path==='/session'&&request.method==='GET')return json({signedIn:await authenticated(request,env)});
  if(path==='/logout'&&request.method==='POST'){
   const old=await legacyRoute(request,env,body,send);
