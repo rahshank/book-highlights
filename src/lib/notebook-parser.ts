@@ -14,9 +14,9 @@ export interface NotebookParseResult {
 
 const HIGHLIGHT_RE =
   /^(?:(?:Yellow|Blue|Pink|Orange)\s+highlight|Highlight\s*\((?:Yellow|Blue|Pink|Orange)\))\s*\|?\s*(.*)$/i;
-const NOTE_RE = /^Note\s*[|\-]\s*(.*)$/i;
+const NOTE_RE = /^Note\s*[|-]\s*(.*)$/i;
 const PAGE_RE = /page:?\s*(\d+)/i;
-const LOCATION_RE = /location:?\s*([\d\-]+)/i;
+const LOCATION_RE = /location:?\s*([\d-]+)/i;
 
 const NOISE_PHRASES = [
   "notebook export",

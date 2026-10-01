@@ -1,0 +1,13 @@
+name = "book-highlights"
+main = "worker/src/index.ts"
+compatibility_date = "2026-07-05"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "book-highlights"
+database_id = "99447e69-e243-48ee-8dd4-2a07a7ce3431"
+migrations_dir = "worker/migrations"
+
+[[r2_buckets]]
+binding = "SCAN_IMAGES"
+bucket_name = "book-highlights-scans"
